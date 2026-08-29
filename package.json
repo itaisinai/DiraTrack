@@ -12,7 +12,8 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:generate": "npm run db:generate -w @diratrack/database",
-    "db:migrate": "npm run db:migrate -w @diratrack/database"
+    "db:migrate": "npm run db:migrate -w @diratrack/database",
+    "db:seed": "npm run db:seed -w @diratrack/database"
   },
   "devDependencies": {"concurrently": "^9.2.1", "typescript": "^5.9.2"},
   "engines": {"node": ">=22"}

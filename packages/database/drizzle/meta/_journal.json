@@ -15,6 +15,13 @@
       "when": 1787847013654,
       "tag": "0001_green_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788017831981,
+      "tag": "0002_thick_shinobi_shaw",
+      "breakpoints": true
     }
   ]
 }

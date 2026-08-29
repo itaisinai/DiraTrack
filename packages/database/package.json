@@ -1,7 +1,7 @@
 {
   "name": "@diratrack/database", "version": "0.1.0", "private": true, "type": "module",
   "exports": {".": "./src/index.ts", "./schema": "./src/schema.ts"},
-  "scripts": {"typecheck": "tsc --noEmit", "test": "node --experimental-strip-types --test src/schema.test.ts", "db:generate": "drizzle-kit generate", "db:migrate": "drizzle-kit migrate"},
+  "scripts": {"typecheck": "tsc --noEmit", "test": "node --experimental-strip-types --test src/schema.test.ts src/slug.test.ts", "db:generate": "drizzle-kit generate", "db:migrate": "drizzle-kit migrate", "db:seed": "node --experimental-strip-types src/seed.ts"},
   "dependencies": {"drizzle-orm": "^0.44.5", "pg": "^8.16.3"},
   "devDependencies": {"@types/node": "^24.3.0", "@types/pg": "^8.15.5", "dotenv": "^17.2.1", "drizzle-kit": "^0.31.4", "typescript": "^5.9.2"}
 }
