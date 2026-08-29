@@ -7,4 +7,5 @@ export function getDatabase(databaseUrl = process.env.DATABASE_URL) { if (!datab
 export async function closeDatabase() { await pool?.end(); pool = undefined; }
 export * from "./schema.ts";
 export * from "./projects.ts";
+export * from "./research.ts";
 export * from "./slug.ts";
