@@ -7,6 +7,7 @@ import {
   findings,
   milestones,
   projectDocuments,
+  researchJobs,
   sourceChecks,
   tasks,
   users,
@@ -65,4 +66,11 @@ test("the schema permits only one local user", () => {
   assert.ok(localUserIndex, "missing local-user singleton index");
   assert.equal(localUserIndex.config.unique, true);
   assert.ok(localUserIndex.config.where, "local-user singleton index must be partial");
+});
+
+test("research jobs cannot point at a source check from another project", () => {
+  assert.deepEqual(foreignKeyColumns(researchJobs, "research_jobs_source_check_project_fk"), {
+    local: ["source_check_id", "project_id"],
+    foreign: ["id", "project_id"],
+  });
 });

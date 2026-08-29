@@ -22,6 +22,13 @@
       "when": 1788017831981,
       "tag": "0002_thick_shinobi_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788018299164,
+      "tag": "0003_redundant_marten_broadcloak",
+      "breakpoints": true
     }
   ]
 }

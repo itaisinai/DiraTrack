@@ -1,0 +1,67 @@
+import {
+  configureProjectSources,
+  ensureLocalUser,
+  findProjectBySlug,
+  getDatabase,
+  listResearchRuns,
+  startResearchRun,
+} from "@diratrack/database";
+import { mvpSourceCatalog } from "@diratrack/source-adapters";
+import { NextResponse } from "next/server";
+
+type Context = { params: Promise<{ slug: string }> };
+
+export async function GET(_request: Request, context: Context) {
+  const project = await resolveProject(context);
+  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  return NextResponse.json({ researchRuns: await listResearchRuns(project.db, project.id) });
+}
+
+export async function POST(request: Request, context: Context) {
+  const project = await resolveProject(context);
+  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+  const body = await parseOptionalBody(request);
+  if (body instanceof NextResponse) return body;
+  const approvedSourceKeys = new Set(mvpSourceCatalog.map((source) => source.key));
+  const unknownSourceKeys = body.sourceKeys?.filter((key) => !approvedSourceKeys.has(key as (typeof mvpSourceCatalog)[number]["key"]));
+  if (unknownSourceKeys?.length) {
+    return NextResponse.json({ error: "Unknown source keys", unknownSourceKeys }, { status: 400 });
+  }
+
+  await configureProjectSources(project.db, project.id, mvpSourceCatalog);
+  try {
+    const run = await startResearchRun(project.db, project.id, body.sourceKeys);
+    return NextResponse.json({ researchRun: run }, { status: 202 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "No enabled research sources were selected") {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
+}
+
+async function resolveProject(context: Context) {
+  const { slug } = await context.params;
+  const db = getDatabase();
+  const user = await ensureLocalUser(db);
+  const result = await findProjectBySlug(db, user.id, slug);
+  return result ? { db, id: result.project.id } : null;
+}
+
+async function parseOptionalBody(request: Request): Promise<{ sourceKeys?: string[] } | NextResponse> {
+  if (!request.headers.get("content-type")?.includes("application/json")) return {};
+  try {
+    const body: unknown = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Request body must be an object" }, { status: 400 });
+    const sourceKeys = (body as Record<string, unknown>).sourceKeys;
+    if (sourceKeys === undefined) return {};
+    if (!Array.isArray(sourceKeys) || sourceKeys.some((key) => typeof key !== "string" || !key.trim())) {
+      return NextResponse.json({ error: "sourceKeys must be an array of non-empty strings" }, { status: 400 });
+    }
+    return { sourceKeys };
+  } catch (error) {
+    if (error instanceof SyntaxError) return NextResponse.json({ error: "Request body is not valid JSON" }, { status: 400 });
+    throw error;
+  }
+}

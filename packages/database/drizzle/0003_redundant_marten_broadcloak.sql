@@ -1,0 +1,2 @@
+ALTER TABLE "research_jobs" ADD COLUMN "source_check_id" uuid;--> statement-breakpoint
+ALTER TABLE "research_jobs" ADD CONSTRAINT "research_jobs_source_check_project_fk" FOREIGN KEY ("source_check_id","project_id") REFERENCES "public"."source_checks"("id","project_id") ON DELETE cascade ON UPDATE no action;
