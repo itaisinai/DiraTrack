@@ -21,7 +21,7 @@ async function poll() {
   } catch (error) {
     console.error("[research-worker] poll failed", error);
   } finally {
-    if (!stopping) setTimeout(poll, pollInterval).unref();
+    if (!stopping) setTimeout(poll, pollInterval);
   }
 }
 

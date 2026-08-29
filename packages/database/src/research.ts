@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { getDatabase } from "./index.ts";
 import { projectSources, researchJobs, researchRuns, sourceChecks, sources } from "./schema.ts";
 
@@ -78,12 +78,20 @@ export async function listResearchRuns(db: Database, projectId: string) {
   return db.select().from(researchRuns).where(eq(researchRuns.projectId, projectId)).orderBy(sql`${researchRuns.createdAt} desc`);
 }
 
-export async function claimNextResearchJob(db: Database, workerId: string) {
+export async function claimNextResearchJob(db: Database, workerId: string, leaseTimeoutMs = 5 * 60_000) {
+  if (!Number.isFinite(leaseTimeoutMs) || leaseTimeoutMs <= 0) throw new Error("leaseTimeoutMs must be positive");
+  const staleBefore = new Date(Date.now() - leaseTimeoutMs);
+
   return db.transaction(async (transaction) => {
     const [candidate] = await transaction
       .select()
       .from(researchJobs)
-      .where(eq(researchJobs.status, "pending"))
+      .where(
+        or(
+          eq(researchJobs.status, "pending"),
+          and(eq(researchJobs.status, "running"), lt(researchJobs.lockedAt, staleBefore)),
+        ),
+      )
       .orderBy(asc(researchJobs.createdAt))
       .limit(1)
       .for("update", { skipLocked: true });
@@ -108,16 +116,25 @@ export async function claimNextResearchJob(db: Database, workerId: string) {
 export async function skipUnimplementedResearchJob(db: Database, job: NonNullable<Awaited<ReturnType<typeof claimNextResearchJob>>>) {
   await db.transaction(async (transaction) => {
     const now = new Date();
+    const [completedJob] = await transaction
+      .update(researchJobs)
+      .set({ status: "completed", progress: 100, completedAt: now, lockedBy: null, lockedAt: null })
+      .where(and(eq(researchJobs.id, job.id), eq(researchJobs.status, "running"), eq(researchJobs.lockedBy, job.lockedBy!)))
+      .returning({ id: researchJobs.id });
+    if (!completedJob) return;
+
     if (job.sourceCheckId) {
       await transaction
         .update(sourceChecks)
         .set({ status: "skipped", progress: 100, error: "adapter-not-implemented", completedAt: now })
         .where(and(eq(sourceChecks.id, job.sourceCheckId), eq(sourceChecks.projectId, job.projectId)));
     }
+
     await transaction
-      .update(researchJobs)
-      .set({ status: "completed", progress: 100, completedAt: now, lockedBy: null, lockedAt: null })
-      .where(eq(researchJobs.id, job.id));
+      .select({ id: researchRuns.id })
+      .from(researchRuns)
+      .where(eq(researchRuns.id, job.researchRunId!))
+      .for("update");
 
     const remaining = await transaction
       .select({ count: sql<number>`count(*)::int` })
