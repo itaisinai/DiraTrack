@@ -125,12 +125,16 @@ export const taskStatusEnum = pgEnum("task_status", ["open", "in-progress", "com
 
 export const taskRelationTypeEnum = pgEnum("task_relation_type", ["source", "finding", "document", "analysis"]);
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  displayName: text("display_name").notNull(),
-  isLocal: boolean("is_local").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    displayName: text("display_name").notNull(),
+    isLocal: boolean("is_local").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("users_single_local_unique").on(table.isLocal).where(sql`${table.isLocal}`)],
+);
 
 export const projects = pgTable(
   "projects",

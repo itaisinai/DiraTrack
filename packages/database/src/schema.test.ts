@@ -9,6 +9,7 @@ import {
   projectDocuments,
   sourceChecks,
   tasks,
+  users,
 } from "./schema.ts";
 
 function foreignKeyColumns(table: PgTable, name: string) {
@@ -57,4 +58,11 @@ test("timeline and task relations are scoped to the same project", () => {
     local: ["analysis_id", "project_id"],
     foreign: ["id", "project_id"],
   });
+});
+
+test("the schema permits only one local user", () => {
+  const localUserIndex = getTableConfig(users).indexes.find((index) => index.config.name === "users_single_local_unique");
+  assert.ok(localUserIndex, "missing local-user singleton index");
+  assert.equal(localUserIndex.config.unique, true);
+  assert.ok(localUserIndex.config.where, "local-user singleton index must be partial");
 });

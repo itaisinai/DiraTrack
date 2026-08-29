@@ -31,12 +31,12 @@ export interface CreateProjectInput {
 }
 
 export async function ensureLocalUser(db: Database, displayName = "משתמש מקומי") {
-  const [existing] = await db.select().from(users).where(eq(users.isLocal, true)).orderBy(asc(users.createdAt)).limit(1);
-  if (existing) return existing;
+  const [created] = await db.insert(users).values({ displayName, isLocal: true }).onConflictDoNothing().returning();
+  if (created) return created;
 
-  const [created] = await db.insert(users).values({ displayName, isLocal: true }).returning();
-  if (!created) throw new Error("Failed to create local user");
-  return created;
+  const [existing] = await db.select().from(users).where(eq(users.isLocal, true)).limit(1);
+  if (!existing) throw new Error("Failed to create or find local user");
+  return existing;
 }
 
 export async function createProject(db: Database, ownerId: string, input: CreateProjectInput) {
