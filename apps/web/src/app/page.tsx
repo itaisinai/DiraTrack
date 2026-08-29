@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell";
 
 interface ProjectSummary { id: string; name: string; city: string; developer: string | null; currentSlug: string; operationalStatus: string; }
 
-export default function ProjectsPage() {
+function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [error, setError] = useState(false);
 
@@ -20,6 +20,8 @@ export default function ProjectsPage() {
     {projects && projects.length > 0 && <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{projects.map((project) => <Link key={project.id} href={`/projects/${encodeURIComponent(project.currentSlug)}`} className="group rounded-2xl border border-[var(--border)] bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"><div className="mb-5 flex items-start justify-between gap-4"><span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">{project.operationalStatus}</span><span className="text-xl text-slate-300 group-hover:text-[var(--primary)]">←</span></div><h2 className="text-xl font-bold">{project.name}</h2><p className="mt-2 text-sm text-[var(--muted)]">{[project.city, project.developer].filter(Boolean).join(" · ")}</p></Link>)}</div>}
   </AppShell>;
 }
+
+export default ProjectsPage;
 
 function StateCard({ title, body, action, href, onAction }: { title: string; body: string; action: string; href?: string; onAction?: () => void }) {
   const classes = "mt-6 inline-flex rounded-lg bg-[var(--primary)] px-4 py-2 font-semibold text-white";
