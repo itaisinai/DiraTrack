@@ -82,7 +82,7 @@ function uniqueIdentifiers(identifiers: ResearchIdentifier[]) {
 }
 
 function identifierTypeLabel(type: string) {
-  return ({ "lottery-number": "הגרלה", block: "גוש", parcel: "חלקה", lot: "מגרש", "plan-number": "תוכנית", "tender-number": "מכרז", "permit-request-number": "בקשה להיתר" } as Record<string, string>)[type] ?? type;
+  return ({ "lottery-number": "הגרלה", "housing-project-number": "פרויקט דיור", block: "גוש", parcel: "חלקה", lot: "מגרש", "plan-number": "תוכנית", "tender-number": "מכרז", "permit-request-number": "בקשה להיתר" } as Record<string, string>)[type] ?? type;
 }
 
 function decodeBasicHtmlEntities(value: string) {

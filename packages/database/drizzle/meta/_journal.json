@@ -29,6 +29,13 @@
       "when": 1788018299164,
       "tag": "0003_redundant_marten_broadcloak",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788108187076,
+      "tag": "0004_confused_chamber",
+      "breakpoints": true
     }
   ]
 }

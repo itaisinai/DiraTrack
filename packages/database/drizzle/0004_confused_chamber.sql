@@ -1,0 +1,1 @@
+ALTER TYPE "public"."identifier_type" ADD VALUE 'housing-project-number' BEFORE 'tender-number';
