@@ -18,6 +18,7 @@ interface SourceCheck {
 interface ResearchRunDetails {
   run: { id: string; status: string; progress: number; createdAt: string; startedAt: string | null; completedAt: string | null };
   sourceChecks: SourceCheck[];
+  findings: Array<{ id: string; sourceCheckId: string; title: string; summary: string; sourceUrl: string | null; verificationStatus: string; matchingIdentifiers: unknown }>;
 }
 
 const activeStatuses = new Set(["pending", "running", "waiting-for-user"]);
@@ -95,6 +96,17 @@ function LiveResearchPage() {
           {details.sourceChecks.map((check) => <SourceCard key={check.id} check={check} />)}
         </div>
       </section>
+
+      {details.findings.length > 0 && <section className="mt-8 rounded-xl border border-[var(--border)] bg-white p-6">
+        <div><h2 className="text-xl font-bold">תוצאות שממתינות לבדיקה</h2><p className="mt-1 text-sm text-[var(--muted)]">אלו התאמות ממקורות חיים. הן אינן נחשבות לעובדות בפרויקט עד לאימות ידני.</p></div>
+        <div className="mt-5 grid gap-4">
+          {details.findings.map((finding) => <article key={finding.id} className="rounded-lg border border-amber-200 bg-amber-50/40 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="font-bold">{finding.title}</h3><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">דורש בדיקה · לא מאומת</span></div>
+            <p className="mt-3 text-sm text-[var(--muted)]">{finding.summary}</p>
+            {finding.sourceUrl && <a href={finding.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-semibold text-[var(--primary)]">פתיחת המקור ↗</a>}
+          </article>)}
+        </div>
+      </section>}
     </>}
   </AppShell>;
 }

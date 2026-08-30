@@ -1,5 +1,6 @@
 import "dotenv/config";
-import { claimNextResearchJob, closeDatabase, getDatabase, skipUnimplementedResearchJob } from "@diratrack/database";
+import { claimNextResearchJob, closeDatabase, completeResearchJob, failResearchJob, getDatabase, getResearchContext, skipUnimplementedResearchJob } from "@diratrack/database";
+import { getSourceAdapter } from "@diratrack/source-adapters";
 
 const pollInterval = Number(process.env.RESEARCH_WORKER_POLL_INTERVAL_MS ?? 5000);
 if (!Number.isFinite(pollInterval) || pollInterval < 1000) throw new Error("RESEARCH_WORKER_POLL_INTERVAL_MS must be at least 1000");
@@ -15,8 +16,24 @@ async function poll() {
     const job = await claimNextResearchJob(db, workerId);
     if (job) {
       const payload = job.payload as { sourceKey?: string };
-      console.log(`[research-worker] ${payload.sourceKey ?? "unknown-source"} has no adapter yet; skipping safely`);
-      await skipUnimplementedResearchJob(db, job);
+      const sourceKey = payload.sourceKey ?? "unknown-source";
+      const adapter = getSourceAdapter(sourceKey);
+      if (!adapter) {
+        console.log(`[research-worker] ${sourceKey} has no adapter yet; skipping safely`);
+        await skipUnimplementedResearchJob(db, job);
+      } else {
+        console.log(`[research-worker] searching ${sourceKey}`);
+        try {
+          const context = await getResearchContext(db, job.projectId);
+          if (!context) throw new Error("Project not found for research job");
+          const discoveries = await adapter.discover(context);
+          await completeResearchJob(db, job, discoveries);
+          console.log(`[research-worker] ${sourceKey} completed with ${discoveries.length} result(s)`);
+        } catch (error) {
+          console.error(`[research-worker] ${sourceKey} failed`, error);
+          await failResearchJob(db, job, error);
+        }
+      }
     }
   } catch (error) {
     console.error("[research-worker] poll failed", error);

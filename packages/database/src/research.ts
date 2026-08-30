@@ -1,8 +1,9 @@
 import { and, asc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { getDatabase } from "./index.ts";
-import { projectSources, researchJobs, researchRuns, sourceChecks, sources } from "./schema.ts";
+import { findings, projectIdentifiers, projects, projectSources, researchJobs, researchRuns, sourceChecks, sources } from "./schema.ts";
 
 type Database = ReturnType<typeof getDatabase>;
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export interface SourceDefinition {
   key: string;
@@ -108,7 +109,23 @@ export async function getResearchRunDetails(db: Database, projectId: string, res
     .where(and(eq(sourceChecks.projectId, projectId), eq(sourceChecks.researchRunId, researchRunId)))
     .orderBy(asc(sources.name));
 
-  return { run, sourceChecks: checks };
+  const runFindings = await db
+    .select({
+      id: findings.id,
+      sourceCheckId: findings.sourceCheckId,
+      title: findings.title,
+      summary: findings.summary,
+      sourceUrl: findings.sourceUrl,
+      verificationStatus: findings.verificationStatus,
+      matchingIdentifiers: findings.matchingIdentifiers,
+      discoveredAt: findings.discoveredAt,
+    })
+    .from(findings)
+    .innerJoin(sourceChecks, and(eq(sourceChecks.id, findings.sourceCheckId), eq(sourceChecks.projectId, findings.projectId)))
+    .where(and(eq(findings.projectId, projectId), eq(sourceChecks.researchRunId, researchRunId)))
+    .orderBy(asc(findings.discoveredAt));
+
+  return { run, sourceChecks: checks, findings: runFindings };
 }
 
 export async function cancelResearchRun(db: Database, projectId: string, researchRunId: string) {
@@ -177,6 +194,91 @@ export async function claimNextResearchJob(db: Database, workerId: string, lease
   });
 }
 
+export async function getResearchContext(db: Database, projectId: string) {
+  const [project] = await db
+    .select({ name: projects.name, city: projects.city, developer: projects.developer })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  if (!project) return null;
+  const identifiers = await db
+    .select({ type: projectIdentifiers.type, value: projectIdentifiers.value })
+    .from(projectIdentifiers)
+    .where(eq(projectIdentifiers.projectId, projectId));
+  return { project, identifiers };
+}
+
+export interface ResearchDiscovery {
+  externalId: string;
+  title: string;
+  sourceUrl: string;
+  summary: string;
+  matchingIdentifiers: Array<{ type: string; value: string }>;
+  metadata: Record<string, unknown>;
+}
+
+export async function completeResearchJob(
+  db: Database,
+  job: NonNullable<Awaited<ReturnType<typeof claimNextResearchJob>>>,
+  discoveries: ResearchDiscovery[],
+) {
+  await db.transaction(async (transaction) => {
+    const now = new Date();
+    const [completedJob] = await transaction
+      .update(researchJobs)
+      .set({ status: "completed", progress: 100, completedAt: now, lockedBy: null, lockedAt: null })
+      .where(and(eq(researchJobs.id, job.id), eq(researchJobs.status, "running"), eq(researchJobs.lockedBy, job.lockedBy!)))
+      .returning({ id: researchJobs.id });
+    if (!completedJob || !job.sourceCheckId) return;
+
+    for (const discovery of discoveries) {
+      await transaction
+        .insert(findings)
+        .values({
+          projectId: job.projectId,
+          sourceCheckId: job.sourceCheckId,
+          externalId: discovery.externalId,
+          title: discovery.title,
+          summary: discovery.summary,
+          sourceUrl: discovery.sourceUrl,
+          verificationStatus: "requires-review",
+          matchingIdentifiers: discovery.matchingIdentifiers,
+          rawMetadata: discovery.metadata,
+        })
+        .onConflictDoUpdate({
+          target: [findings.projectId, findings.sourceCheckId, findings.externalId],
+          set: { title: discovery.title, summary: discovery.summary, sourceUrl: discovery.sourceUrl, matchingIdentifiers: discovery.matchingIdentifiers, rawMetadata: discovery.metadata, updatedAt: now },
+        });
+    }
+
+    await transaction
+      .update(sourceChecks)
+      .set({ status: discoveries.length ? "results-found" : "no-results", progress: 100, resultCount: discoveries.length, error: null, completedAt: now })
+      .where(and(eq(sourceChecks.id, job.sourceCheckId), eq(sourceChecks.projectId, job.projectId)));
+    await updateRunCompletion(transaction, job.researchRunId!, now);
+  });
+}
+
+export async function failResearchJob(db: Database, job: NonNullable<Awaited<ReturnType<typeof claimNextResearchJob>>>, error: unknown) {
+  await db.transaction(async (transaction) => {
+    const now = new Date();
+    const message = error instanceof Error ? error.message : "Unknown research adapter error";
+    const [failedJob] = await transaction
+      .update(researchJobs)
+      .set({ status: "failed", progress: 100, error: message, completedAt: now, lockedBy: null, lockedAt: null })
+      .where(and(eq(researchJobs.id, job.id), eq(researchJobs.status, "running"), eq(researchJobs.lockedBy, job.lockedBy!)))
+      .returning({ id: researchJobs.id });
+    if (!failedJob) return;
+    if (job.sourceCheckId) {
+      await transaction
+        .update(sourceChecks)
+        .set({ status: "failed", progress: 100, error: message, completedAt: now })
+        .where(and(eq(sourceChecks.id, job.sourceCheckId), eq(sourceChecks.projectId, job.projectId)));
+    }
+    await updateRunCompletion(transaction, job.researchRunId!, now);
+  });
+}
+
 export async function skipUnimplementedResearchJob(db: Database, job: NonNullable<Awaited<ReturnType<typeof claimNextResearchJob>>>) {
   await db.transaction(async (transaction) => {
     const now = new Date();
@@ -211,4 +313,38 @@ export async function skipUnimplementedResearchJob(db: Database, job: NonNullabl
         .where(eq(researchRuns.id, job.researchRunId!));
     }
   });
+}
+
+async function updateRunCompletion(transaction: Transaction, researchRunId: string, now: Date) {
+  const [run] = await transaction
+    .select({ status: researchRuns.status })
+    .from(researchRuns)
+    .where(eq(researchRuns.id, researchRunId))
+    .for("update");
+  if (!run || run.status === "cancelled") return;
+
+  const [jobCounts] = await transaction
+    .select({
+      total: sql<number>`count(*)::int`,
+      remaining: sql<number>`count(*) filter (where ${researchJobs.status} in ('pending', 'running', 'waiting-for-user'))::int`,
+    })
+    .from(researchJobs)
+    .where(eq(researchJobs.researchRunId, researchRunId));
+  const total = jobCounts?.total ?? 0;
+  const remaining = jobCounts?.remaining ?? 0;
+  const progress = total ? Math.round(((total - remaining) / total) * 100) : 0;
+
+  if (remaining) {
+    await transaction.update(researchRuns).set({ progress }).where(eq(researchRuns.id, researchRunId));
+    return;
+  }
+
+  const [problemChecks] = await transaction
+    .select({ count: sql<number>`count(*)::int` })
+    .from(sourceChecks)
+    .where(and(eq(sourceChecks.researchRunId, researchRunId), inArray(sourceChecks.status, ["failed", "skipped"])));
+  await transaction
+    .update(researchRuns)
+    .set({ status: (problemChecks?.count ?? 0) ? "completed-with-errors" : "completed", progress: 100, completedAt: now })
+    .where(eq(researchRuns.id, researchRunId));
 }
