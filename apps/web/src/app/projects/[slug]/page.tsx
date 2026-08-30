@@ -2,7 +2,7 @@
 
 import { StageTracker } from "@diratrack/shared-ui";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 
@@ -12,6 +12,7 @@ interface ResearchRun { id: string; status: string; progress: number; createdAt:
 
 function ProjectPage() {
   const { slug } = useParams<{ slug: string }>();
+  const router = useRouter();
   const [data, setData] = useState<{ project: Project; identifiers: Identifier[] } | null>(null);
   const [runs, setRuns] = useState<ResearchRun[]>([]);
   const [error, setError] = useState("");
@@ -31,7 +32,8 @@ function ProjectPage() {
     try {
       const response = await fetch(`/api/projects/${encodedSlug}/research-runs`, { method: "POST" });
       if (!response.ok) { const result = await response.json() as { error?: string }; throw new Error(result.error || "לא הצלחנו להתחיל את המחקר"); }
-      await loadRuns();
+      const result = await response.json() as { researchRun: ResearchRun };
+      router.push(`/projects/${encodedSlug}/research/${encodeURIComponent(result.researchRun.id)}`);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "לא הצלחנו להתחיל את המחקר"); } finally { setStarting(false); }
   }
 
