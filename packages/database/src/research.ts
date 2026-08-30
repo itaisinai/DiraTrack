@@ -78,6 +78,70 @@ export async function listResearchRuns(db: Database, projectId: string) {
   return db.select().from(researchRuns).where(eq(researchRuns.projectId, projectId)).orderBy(sql`${researchRuns.createdAt} desc`);
 }
 
+export async function getResearchRunDetails(db: Database, projectId: string, researchRunId: string) {
+  const [run] = await db
+    .select()
+    .from(researchRuns)
+    .where(and(eq(researchRuns.id, researchRunId), eq(researchRuns.projectId, projectId)))
+    .limit(1);
+  if (!run) return null;
+
+  const checks = await db
+    .select({
+      id: sourceChecks.id,
+      status: sourceChecks.status,
+      progress: sourceChecks.progress,
+      resultCount: sourceChecks.resultCount,
+      error: sourceChecks.error,
+      manualAction: sourceChecks.manualAction,
+      startedAt: sourceChecks.startedAt,
+      completedAt: sourceChecks.completedAt,
+      source: {
+        key: sources.key,
+        name: sources.name,
+        category: sources.category,
+        baseUrl: sources.baseUrl,
+      },
+    })
+    .from(sourceChecks)
+    .innerJoin(sources, eq(sources.id, sourceChecks.sourceId))
+    .where(and(eq(sourceChecks.projectId, projectId), eq(sourceChecks.researchRunId, researchRunId)))
+    .orderBy(asc(sources.name));
+
+  return { run, sourceChecks: checks };
+}
+
+export async function cancelResearchRun(db: Database, projectId: string, researchRunId: string) {
+  return db.transaction(async (transaction) => {
+    const [run] = await transaction
+      .select()
+      .from(researchRuns)
+      .where(and(eq(researchRuns.id, researchRunId), eq(researchRuns.projectId, projectId)))
+      .limit(1)
+      .for("update");
+    if (!run) return null;
+    if (!["pending", "running", "waiting-for-user"].includes(run.status)) return { run, changed: false };
+
+    const now = new Date();
+    const [cancelledRun] = await transaction
+      .update(researchRuns)
+      .set({ status: "cancelled", completedAt: now })
+      .where(and(eq(researchRuns.id, researchRunId), eq(researchRuns.projectId, projectId)))
+      .returning();
+
+    await transaction
+      .update(researchJobs)
+      .set({ status: "cancelled", completedAt: now, lockedBy: null, lockedAt: null })
+      .where(and(eq(researchJobs.projectId, projectId), eq(researchJobs.researchRunId, researchRunId), inArray(researchJobs.status, ["pending", "running", "waiting-for-user"])));
+    await transaction
+      .update(sourceChecks)
+      .set({ status: "skipped", error: "research-cancelled", completedAt: now })
+      .where(and(eq(sourceChecks.projectId, projectId), eq(sourceChecks.researchRunId, researchRunId), inArray(sourceChecks.status, ["pending", "running", "waiting-for-user"])));
+
+    return { run: cancelledRun!, changed: true };
+  });
+}
+
 export async function claimNextResearchJob(db: Database, workerId: string, leaseTimeoutMs = 5 * 60_000) {
   if (!Number.isFinite(leaseTimeoutMs) || leaseTimeoutMs <= 0) throw new Error("leaseTimeoutMs must be positive");
   const staleBefore = new Date(Date.now() - leaseTimeoutMs);
