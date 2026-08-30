@@ -60,7 +60,7 @@ function ProjectPage() {
 export default ProjectPage;
 
 function Summary({ title, body }: { title: string; body: string }) { return <article className="rounded-xl border border-[var(--border)] border-r-4 border-r-slate-300 bg-white p-5"><h2 className="text-sm font-medium text-[var(--muted)]">{title}</h2><p className="mt-3 font-semibold">{body}</p></article>; }
-function identifierLabel(type: string) { return ({ "lottery-number": "הגרלה", block: "גוש", parcel: "חלקה", lot: "מגרש" } as Record<string, string>)[type] ?? type; }
+function identifierLabel(type: string) { return ({ "lottery-number": "הגרלה", "housing-project-number": "פרויקט דיור", block: "גוש", parcel: "חלקה", lot: "מגרש" } as Record<string, string>)[type] ?? type; }
 function originLabel(origin: string) { return ({ "winning-message": "חולץ מהודעת הזכייה", manual: "נוסף ידנית", research: "נמצא במחקר", "official-source": "מקור רשמי" } as Record<string, string>)[origin] ?? origin; }
 function researchStatus(status: string) { return ({ pending: "מחקר ממתין", running: "מחקר בתהליך", "completed-with-errors": "מחקר הסתיים חלקית", completed: "מחקר הושלם", failed: "מחקר נכשל" } as Record<string, string>)[status] ?? status; }
 function verificationStatusLabel(status: string) { return ({ verified: "מאומת", unverified: "לא מאומת", "requires-review": "דורש בדיקה", "awaiting-approval": "ממתין לאישור", conflict: "סתירה", rejected: "נדחה" } as Record<string, string>)[status] ?? status; }

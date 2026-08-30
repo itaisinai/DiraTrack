@@ -67,6 +67,7 @@ export const sourceCategoryEnum = pgEnum("source_category", [
 
 export const identifierTypeEnum = pgEnum("identifier_type", [
   "lottery-number",
+  "housing-project-number",
   "tender-number",
   "plan-number",
   "block",

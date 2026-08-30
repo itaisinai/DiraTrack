@@ -2,6 +2,7 @@ import type { CreateProjectInput, NewProjectIdentifier } from "@diratrack/databa
 
 const identifierTypes = new Set([
   "lottery-number",
+  "housing-project-number",
   "tender-number",
   "plan-number",
   "block",
