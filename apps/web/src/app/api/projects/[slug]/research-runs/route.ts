@@ -28,6 +28,9 @@ export async function POST(request: Request, context: Context) {
   if (unknownSourceKeys?.length) {
     return NextResponse.json({ error: "Unknown source keys", unknownSourceKeys }, { status: 400 });
   }
+  if ((!body.sourceKeys || body.sourceKeys.includes("asia-cyrus")) && body.externalDataConsent !== true) {
+    return NextResponse.json({ error: "Explicit consent is required before sending project data to an external source" }, { status: 400 });
+  }
 
   await configureProjectSources(project.db, project.id, mvpSourceCatalog);
   try {
@@ -49,17 +52,21 @@ async function resolveProject(context: Context) {
   return result ? { db, id: result.project.id } : null;
 }
 
-async function parseOptionalBody(request: Request): Promise<{ sourceKeys?: string[] } | NextResponse> {
+async function parseOptionalBody(request: Request): Promise<{ sourceKeys?: string[]; externalDataConsent?: boolean } | NextResponse> {
   if (!request.headers.get("content-type")?.includes("application/json")) return {};
   try {
     const body: unknown = await request.json();
     if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Request body must be an object" }, { status: 400 });
     const sourceKeys = (body as Record<string, unknown>).sourceKeys;
-    if (sourceKeys === undefined) return {};
+    const externalDataConsent = (body as Record<string, unknown>).externalDataConsent;
+    if (externalDataConsent !== undefined && typeof externalDataConsent !== "boolean") {
+      return NextResponse.json({ error: "externalDataConsent must be a boolean" }, { status: 400 });
+    }
+    if (sourceKeys === undefined) return { externalDataConsent };
     if (!Array.isArray(sourceKeys) || sourceKeys.some((key) => typeof key !== "string" || !key.trim())) {
       return NextResponse.json({ error: "sourceKeys must be an array of non-empty strings" }, { status: 400 });
     }
-    return { sourceKeys };
+    return { sourceKeys, externalDataConsent };
   } catch (error) {
     if (error instanceof SyntaxError) return NextResponse.json({ error: "Request body is not valid JSON" }, { status: 400 });
     throw error;
