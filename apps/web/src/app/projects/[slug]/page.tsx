@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { encodeRouteSegment } from "@/lib/route-segment";
 
 interface Project { name: string; city: string; developer: string | null; currentSlug: string; operationalStatus: string; stage: "winning" | "planning" | "building-permit" | "apartment-selection-and-contract" | "construction" | "occupancy-approval" | "delivery"; }
 interface Identifier { id: string; type: string; value: string; origin: string; verificationStatus: string; }
@@ -19,7 +20,7 @@ function ProjectPage() {
   const [starting, setStarting] = useState(false);
   const [showResearchConfirmation, setShowResearchConfirmation] = useState(false);
   const [externalDataConsent, setExternalDataConsent] = useState(false);
-  const encodedSlug = encodeURIComponent(slug);
+  const encodedSlug = encodeRouteSegment(slug);
 
   const loadRuns = useCallback(() => fetch(`/api/projects/${encodedSlug}/research-runs`).then((response) => response.ok ? response.json() : Promise.reject()).then((result: { researchRuns: ResearchRun[] }) => setRuns(result.researchRuns)).catch(() => undefined), [encodedSlug]);
   useEffect(() => { fetch(`/api/projects/${encodedSlug}`).then(async (response) => { if (!response.ok) throw new Error("הפרויקט לא נמצא"); return response.json(); }).then(setData).catch((caught) => setError(caught instanceof Error ? caught.message : "לא ניתן לטעון את הפרויקט")); void loadRuns(); }, [encodedSlug, loadRuns]);

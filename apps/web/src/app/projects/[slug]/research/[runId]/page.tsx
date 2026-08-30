@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { encodeRouteSegment } from "@/lib/route-segment";
 
 interface SourceCheck {
   id: string;
@@ -28,7 +29,7 @@ function LiveResearchPage() {
   const [details, setDetails] = useState<ResearchRunDetails | null>(null);
   const [error, setError] = useState("");
   const [cancelling, setCancelling] = useState(false);
-  const encodedSlug = encodeURIComponent(slug);
+  const encodedSlug = encodeRouteSegment(slug);
   const endpoint = `/api/projects/${encodedSlug}/research-runs/${encodeURIComponent(runId)}`;
 
   const fetchRun = useCallback(async () => {
