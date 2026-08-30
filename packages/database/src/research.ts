@@ -32,6 +32,7 @@ export async function configureProjectSources(db: Database, projectId: string, c
 }
 
 export async function startResearchRun(db: Database, projectId: string, requestedSourceKeys?: string[]) {
+  if (requestedSourceKeys?.length === 0) throw new Error("No enabled research sources were selected");
   return db.transaction(async (transaction) => {
     const configuredSources = await transaction
       .select({ id: sources.id, key: sources.key })

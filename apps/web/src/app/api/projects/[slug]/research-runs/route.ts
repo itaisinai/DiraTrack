@@ -66,6 +66,9 @@ async function parseOptionalBody(request: Request): Promise<{ sourceKeys?: strin
     if (!Array.isArray(sourceKeys) || sourceKeys.some((key) => typeof key !== "string" || !key.trim())) {
       return NextResponse.json({ error: "sourceKeys must be an array of non-empty strings" }, { status: 400 });
     }
+    if (sourceKeys.length === 0) {
+      return NextResponse.json({ error: "sourceKeys must contain at least one source" }, { status: 400 });
+    }
     return { sourceKeys, externalDataConsent };
   } catch (error) {
     if (error instanceof SyntaxError) return NextResponse.json({ error: "Request body is not valid JSON" }, { status: 400 });
