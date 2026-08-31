@@ -19,7 +19,7 @@ interface SourceCheck {
 interface ResearchRunDetails {
   run: { id: string; status: string; progress: number; createdAt: string; startedAt: string | null; completedAt: string | null };
   sourceChecks: SourceCheck[];
-  findings: Array<{ id: string; sourceCheckId: string; title: string; summary: string; sourceUrl: string | null; verificationStatus: string; matchingIdentifiers: unknown }>;
+  findings: Array<{ id: string; sourceCheckId: string; title: string; summary: string; sourceUrl: string | null; verificationStatus: string; isRelevant: boolean | null; matchingIdentifiers: unknown }>;
 }
 
 const activeStatuses = new Set(["pending", "running", "waiting-for-user"]);
@@ -99,12 +99,12 @@ function LiveResearchPage() {
       </section>
 
       {details.findings.length > 0 && <section className="mt-8 rounded-xl border border-[var(--border)] bg-white p-6">
-        <div><h2 className="text-xl font-bold">תוצאות שממתינות לבדיקה</h2><p className="mt-1 text-sm text-[var(--muted)]">אלו התאמות ממקורות חיים. הן אינן נחשבות לעובדות בפרויקט עד לאימות ידני.</p></div>
+        <div><h2 className="text-xl font-bold">תוצאות המחקר</h2><p className="mt-1 text-sm text-[var(--muted)]">אלו התאמות ממקורות חיים. הן אינן נחשבות לעובדות בפרויקט עד לאימות ידני.</p></div>
         <div className="mt-5 grid gap-4">
           {details.findings.map((finding) => <article key={finding.id} className="rounded-lg border border-amber-200 bg-amber-50/40 p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="font-bold">{finding.title}</h3><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">דורש בדיקה · לא מאומת</span></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><h3 className="font-bold">{finding.title}</h3><FindingRunStatus isRelevant={finding.isRelevant}/></div>
             <p className="mt-3 text-sm text-[var(--muted)]">{finding.summary}</p>
-            {finding.sourceUrl && <a href={finding.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-semibold text-[var(--primary)]">פתיחת המקור ↗</a>}
+            <div className="mt-4 flex flex-wrap gap-4"><Link href={`/projects/${encodedSlug}/findings/${encodeRouteSegment(finding.id)}`} className="text-sm font-semibold text-[var(--primary)]">סקירת הממצא</Link>{finding.sourceUrl && <a href={finding.sourceUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[var(--primary)]">פתיחת המקור ↗</a>}</div>
           </article>)}
         </div>
       </section>}
@@ -121,6 +121,12 @@ function SourceCard({ check }: { check: SourceCheck }) {
     {check.status === "waiting-for-user" && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">נדרשת פעולה ידנית לפני שניתן להמשיך בבדיקת המקור.</p>}
     {check.source.baseUrl && <a href={check.source.baseUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-semibold text-[var(--primary)]">פתיחת המקור ↗</a>}
   </article>;
+}
+
+function FindingRunStatus({ isRelevant }: { isRelevant: boolean | null }) {
+  if (isRelevant === true) return <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">רלוונטי · דורש בדיקה</span>;
+  if (isRelevant === false) return <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">לא רלוונטי</span>;
+  return <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">ממתין לבדיקה · לא מאומת</span>;
 }
 
 function currentStep(details: ResearchRunDetails) {
