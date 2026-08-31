@@ -118,6 +118,7 @@ export async function getResearchRunDetails(db: Database, projectId: string, res
       summary: findings.summary,
       sourceUrl: findings.sourceUrl,
       verificationStatus: findings.verificationStatus,
+      isRelevant: findings.isRelevant,
       matchingIdentifiers: findings.matchingIdentifiers,
       discoveredAt: findings.discoveredAt,
     })

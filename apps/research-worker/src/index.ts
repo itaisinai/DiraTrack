@@ -1,6 +1,8 @@
-import "dotenv/config";
+import { config } from "dotenv";
 import { claimNextResearchJob, closeDatabase, completeResearchJob, failResearchJob, getDatabase, getResearchContext, skipUnimplementedResearchJob } from "@diratrack/database";
 import { getSourceAdapter } from "@diratrack/source-adapters";
+
+config({ path: new URL("../../../.env", import.meta.url), quiet: true });
 
 const pollInterval = Number(process.env.RESEARCH_WORKER_POLL_INTERVAL_MS ?? 5000);
 if (!Number.isFinite(pollInterval) || pollInterval < 1000) throw new Error("RESEARCH_WORKER_POLL_INTERVAL_MS must be at least 1000");
