@@ -281,6 +281,23 @@ export async function failResearchJob(db: Database, job: NonNullable<Awaited<Ret
   });
 }
 
+export async function deferResearchJobForManualAction(
+  db: Database,
+  job: NonNullable<Awaited<ReturnType<typeof claimNextResearchJob>>>,
+  manualAction: { title: string; description: string; url: string; searchValue?: string },
+) {
+  await db.transaction(async (transaction) => {
+    const [waitingJob] = await transaction
+      .update(researchJobs)
+      .set({ status: "waiting-for-user", lockedBy: null, lockedAt: null })
+      .where(and(eq(researchJobs.id, job.id), eq(researchJobs.status, "running"), eq(researchJobs.lockedBy, job.lockedBy!)))
+      .returning({ id: researchJobs.id });
+    if (!waitingJob || !job.sourceCheckId) return;
+    await transaction.update(sourceChecks).set({ status: "waiting-for-user", manualAction, error: null }).where(and(eq(sourceChecks.id, job.sourceCheckId), eq(sourceChecks.projectId, job.projectId)));
+    await transaction.update(researchRuns).set({ status: "waiting-for-user" }).where(and(eq(researchRuns.id, job.researchRunId!), eq(researchRuns.projectId, job.projectId)));
+  });
+}
+
 export async function skipUnimplementedResearchJob(db: Database, job: NonNullable<Awaited<ReturnType<typeof claimNextResearchJob>>>) {
   await db.transaction(async (transaction) => {
     const now = new Date();

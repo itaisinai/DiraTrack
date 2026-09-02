@@ -3,17 +3,11 @@ export interface SourceResearchContext { project: { name: string; city: string; 
 export interface SourceDiscoveryResult { externalId: string; title: string; sourceUrl: string; summary: string; matchingIdentifiers: ResearchIdentifier[]; metadata: Record<string, unknown>; }
 export interface SourceAdapter { readonly id: string; discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]>; }
 
-export class ManualActionRequired extends Error {
-  readonly action: { requiredStep: string; explanation: string; searchValue?: string; sourceUrl?: string; metadata?: Record<string, unknown> };
+export interface ManualResearchAction { title: string; description: string; url: string; searchValue?: string; }
 
-  constructor(
-    message: string,
-    action: { requiredStep: string; explanation: string; searchValue?: string; sourceUrl?: string; metadata?: Record<string, unknown> },
-  ) {
-    super(message);
-    this.name = "ManualActionRequired";
-    this.action = action;
-  }
+export class ManualActionRequiredError extends Error {
+  readonly action: ManualResearchAction;
+  constructor(action: ManualResearchAction) { super(action.description); this.name = "ManualActionRequiredError"; this.action = action; }
 }
 
 export const mvpSourceCatalog = [
@@ -73,23 +67,11 @@ export class DiscountedHousingAdapter implements SourceAdapter {
   readonly id = "discounted-housing";
 
   async discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]> {
-    const lotteryIdentifier = context.identifiers.find((id) => id.type === "lottery-number");
-
-    if (!lotteryIdentifier || !lotteryIdentifier.value.trim()) {
-      throw new ManualActionRequired("לפרויקט אין מספר הגרלה", {
-        requiredStep: "בדיקה ידנית של המקור הרשמי",
-        explanation: "המקור הרשמי 'דירה בהנחה' דורש מספר הגרלה לחיפוש. הוסף מספר הגרלה לפרויקט ונסה שוב, או בדוק את המקור ידנית.",
-        sourceUrl: "https://www.dira.moch.gov.il/ProjectsList",
-      });
-    }
-
-    throw new ManualActionRequired("נדרשת בדיקה ידנית של המקור הרשמי", {
-      requiredStep: "חיפוש פרויקט באתר 'דירה בהנחה'",
-      explanation: `האתר הרשמי של 'דירה בהנחה' דורש בדיקה אינטראקטיבית (CAPTCHA) ולא חושף API יציב. יש לפתוח את המקור ולחפש לפי מספר הגרלה ${lotteryIdentifier.value}.`,
-      searchValue: lotteryIdentifier.value,
-      sourceUrl: "https://www.dira.moch.gov.il/ProjectsList",
-      metadata: { lotteryNumber: lotteryIdentifier.value },
-    });
+    const lotteryNumber = context.identifiers.find((identifier) => identifier.type === "lottery-number")?.value.trim();
+    const description = lotteryNumber
+      ? `יש לפתוח את רשימת ההגרלות הרשמית ולחפש את הגרלה ${lotteryNumber}. האתר דורש בדיקה אינטראקטיבית ולכן DiraTrack אינו מסמן תוצאה כאוטומטית.`
+      : "יש לפתוח את רשימת ההגרלות הרשמית. חסר מספר הגרלה שמאפשר למקד את החיפוש.";
+    throw new ManualActionRequiredError({ title: lotteryNumber ? `חיפוש הגרלה ${lotteryNumber} באתר הרשמי` : "חיפוש באתר דירה בהנחה", description, url: "https://www.dira.moch.gov.il/ProjectsList", searchValue: lotteryNumber });
   }
 }
 

@@ -29,11 +29,11 @@ export async function POST(request: Request, context: Context) {
     return NextResponse.json({ error: "Unknown source keys", unknownSourceKeys }, { status: 400 });
   }
 
-  const sourcesThatSendData = ["asia-cyrus"];
+  const sourcesThatRequireConsent = ["asia-cyrus", "discounted-housing"];
   const effectiveSourceKeys = body.sourceKeys ?? mvpSourceCatalog.map((s) => s.key);
-  const willSendExternalData = effectiveSourceKeys.some((key) => sourcesThatSendData.includes(key));
+  const requiresConsent = effectiveSourceKeys.some((key) => sourcesThatRequireConsent.includes(key));
 
-  if (willSendExternalData && body.externalDataConsent !== true) {
+  if (requiresConsent && body.externalDataConsent !== true) {
     return NextResponse.json({ error: "Explicit consent is required before sending project data to an external source" }, { status: 400 });
   }
 
