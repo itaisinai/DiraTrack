@@ -292,9 +292,39 @@ export async function deferResearchJobForManualAction(
       .set({ status: "waiting-for-user", lockedBy: null, lockedAt: null })
       .where(and(eq(researchJobs.id, job.id), eq(researchJobs.status, "running"), eq(researchJobs.lockedBy, job.lockedBy!)))
       .returning({ id: researchJobs.id });
-    if (!waitingJob || !job.sourceCheckId) return;
-    await transaction.update(sourceChecks).set({ status: "waiting-for-user", manualAction, error: null }).where(and(eq(sourceChecks.id, job.sourceCheckId), eq(sourceChecks.projectId, job.projectId)));
-    await transaction.update(researchRuns).set({ status: "waiting-for-user" }).where(and(eq(researchRuns.id, job.researchRunId!), eq(researchRuns.projectId, job.projectId)));
+    if (!waitingJob) return;
+
+    if (job.sourceCheckId) {
+      await transaction
+        .update(sourceChecks)
+        .set({ status: "waiting-for-user", manualAction, error: null })
+        .where(and(eq(sourceChecks.id, job.sourceCheckId), eq(sourceChecks.projectId, job.projectId)));
+    }
+
+    // Check if there are other running jobs before setting run to waiting
+    const [jobCounts] = await transaction
+      .select({
+        hasRunning: sql<number>`count(*) filter (where ${researchJobs.status} = 'running')::int`,
+        hasWaiting: sql<number>`count(*) filter (where ${researchJobs.status} = 'waiting-for-user')::int`,
+      })
+      .from(researchJobs)
+      .where(eq(researchJobs.researchRunId, job.researchRunId!));
+
+    const hasRunning = (jobCounts?.hasRunning ?? 0) > 0;
+    const hasWaiting = (jobCounts?.hasWaiting ?? 0) > 0;
+
+    // Only set run to waiting if no other jobs are running
+    if (hasRunning) {
+      await transaction
+        .update(researchRuns)
+        .set({ status: "running" })
+        .where(eq(researchRuns.id, job.researchRunId!));
+    } else if (hasWaiting) {
+      await transaction
+        .update(researchRuns)
+        .set({ status: "waiting-for-user" })
+        .where(eq(researchRuns.id, job.researchRunId!));
+    }
   });
 }
 
@@ -329,52 +359,6 @@ export async function skipUnimplementedResearchJob(db: Database, job: NonNullabl
       await transaction
         .update(researchRuns)
         .set({ status: "completed-with-errors", progress: 100, completedAt: now })
-        .where(eq(researchRuns.id, job.researchRunId!));
-    }
-  });
-}
-
-export async function setResearchJobWaitingForUser(
-  db: Database,
-  job: NonNullable<Awaited<ReturnType<typeof claimNextResearchJob>>>,
-  action: { requiredStep: string; explanation: string; searchValue?: string; sourceUrl?: string; metadata?: Record<string, unknown> },
-) {
-  await db.transaction(async (transaction) => {
-    const [waitingJob] = await transaction
-      .update(researchJobs)
-      .set({ status: "waiting-for-user", progress: 50, lockedBy: null, lockedAt: null })
-      .where(and(eq(researchJobs.id, job.id), eq(researchJobs.status, "running"), eq(researchJobs.lockedBy, job.lockedBy!)))
-      .returning({ id: researchJobs.id });
-    if (!waitingJob) return;
-
-    if (job.sourceCheckId) {
-      await transaction
-        .update(sourceChecks)
-        .set({ status: "waiting-for-user", progress: 50, manualAction: action })
-        .where(and(eq(sourceChecks.id, job.sourceCheckId), eq(sourceChecks.projectId, job.projectId)));
-    }
-
-    const [jobCounts] = await transaction
-      .select({
-        total: sql<number>`count(*)::int`,
-        hasRunning: sql<number>`count(*) filter (where ${researchJobs.status} = 'running')::int`,
-        hasWaiting: sql<number>`count(*) filter (where ${researchJobs.status} = 'waiting-for-user')::int`,
-      })
-      .from(researchJobs)
-      .where(eq(researchJobs.researchRunId, job.researchRunId!));
-
-    const hasRunning = (jobCounts?.hasRunning ?? 0) > 0;
-    const hasWaiting = (jobCounts?.hasWaiting ?? 0) > 0;
-
-    if (hasRunning) {
-      await transaction
-        .update(researchRuns)
-        .set({ status: "running" })
-        .where(eq(researchRuns.id, job.researchRunId!));
-    } else if (hasWaiting) {
-      await transaction
-        .update(researchRuns)
-        .set({ status: "waiting-for-user" })
         .where(eq(researchRuns.id, job.researchRunId!));
     }
   });

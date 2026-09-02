@@ -145,5 +145,11 @@ vite.config.ts.timestamp-*
 # DiraTrack local storage
 data/
 
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # macOS
 .DS_Store
