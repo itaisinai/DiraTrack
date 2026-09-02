@@ -115,11 +115,20 @@ function LiveResearchPage() {
 export default LiveResearchPage;
 
 function SourceCard({ check }: { check: SourceCheck }) {
+  const manualAction = check.manualAction as { requiredStep?: string; explanation?: string; searchValue?: string; sourceUrl?: string } | null;
+
   return <article className="rounded-xl border border-[var(--border)] bg-white p-5">
     <div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{check.source.name}</h3><p className="mt-1 text-xs text-[var(--muted)]">{categoryLabel(check.source.category)}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${sourceStatusStyle(check.status)}`}>{sourceStatusLabel(check)}</span></div>
     <p className="mt-4 text-sm text-[var(--muted)]">{sourceExplanation(check)}</p>
-    {check.status === "waiting-for-user" && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">נדרשת פעולה ידנית לפני שניתן להמשיך בבדיקת המקור.</p>}
-    {check.source.baseUrl && <a href={check.source.baseUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-semibold text-[var(--primary)]">פתיחת המקור ↗</a>}
+    {check.status === "waiting-for-user" && manualAction && <div className="mt-3 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
+      <p className="font-semibold">{manualAction.requiredStep}</p>
+      <p className="mt-2">{manualAction.explanation}</p>
+      {manualAction.searchValue && <p className="mt-2">
+        <strong>ערך לחיפוש:</strong> <code className="rounded bg-amber-100 px-2 py-1 font-mono">{manualAction.searchValue}</code>
+      </p>}
+    </div>}
+    {check.status === "waiting-for-user" && !manualAction && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">נדרשת פעולה ידנית לפני שניתן להמשיך בבדיקת המקור.</p>}
+    {((check.status === "waiting-for-user" && manualAction?.sourceUrl) || check.source.baseUrl) && <a href={(check.status === "waiting-for-user" && manualAction?.sourceUrl) || check.source.baseUrl || "#"} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-semibold text-[var(--primary)]">פתיחת המקור ↗</a>}
   </article>;
 }
 

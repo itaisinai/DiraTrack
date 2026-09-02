@@ -2,7 +2,10 @@
   "name": "diratrack",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "concurrently -k -n web,worker -c blue,green \"npm run dev -w @diratrack/web\" \"npm run dev -w @diratrack/research-worker\"",
     "build": "npm run build --workspaces --if-present",
@@ -15,6 +18,12 @@
     "db:migrate": "npm run db:migrate -w @diratrack/database",
     "db:seed": "npm run db:seed -w @diratrack/database"
   },
-  "devDependencies": {"concurrently": "^9.2.1", "typescript": "^5.9.2"},
-  "engines": {"node": ">=22"}
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
 }

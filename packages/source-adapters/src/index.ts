@@ -3,6 +3,19 @@ export interface SourceResearchContext { project: { name: string; city: string; 
 export interface SourceDiscoveryResult { externalId: string; title: string; sourceUrl: string; summary: string; matchingIdentifiers: ResearchIdentifier[]; metadata: Record<string, unknown>; }
 export interface SourceAdapter { readonly id: string; discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]>; }
 
+export class ManualActionRequired extends Error {
+  readonly action: { requiredStep: string; explanation: string; searchValue?: string; sourceUrl?: string; metadata?: Record<string, unknown> };
+
+  constructor(
+    message: string,
+    action: { requiredStep: string; explanation: string; searchValue?: string; sourceUrl?: string; metadata?: Record<string, unknown> },
+  ) {
+    super(message);
+    this.name = "ManualActionRequired";
+    this.action = action;
+  }
+}
+
 export const mvpSourceCatalog = [
   { key: "discounted-housing", name: "דירה בהנחה", category: "official", baseUrl: "https://www.dira.moch.gov.il", adapterKey: "discounted-housing" },
   { key: "israel-land-authority", name: "רשות מקרקעי ישראל", category: "official", baseUrl: "https://www.gov.il/he/departments/israel_land_authority", adapterKey: "israel-land-authority" },
@@ -56,8 +69,34 @@ export class AsiaCyrusAdapter implements SourceAdapter {
   }
 }
 
+export class DiscountedHousingAdapter implements SourceAdapter {
+  readonly id = "discounted-housing";
+
+  async discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]> {
+    const lotteryIdentifier = context.identifiers.find((id) => id.type === "lottery-number");
+
+    if (!lotteryIdentifier || !lotteryIdentifier.value.trim()) {
+      throw new ManualActionRequired("לפרויקט אין מספר הגרלה", {
+        requiredStep: "בדיקה ידנית של המקור הרשמי",
+        explanation: "המקור הרשמי 'דירה בהנחה' דורש מספר הגרלה לחיפוש. הוסף מספר הגרלה לפרויקט ונסה שוב, או בדוק את המקור ידנית.",
+        sourceUrl: "https://www.dira.moch.gov.il/ProjectsList",
+      });
+    }
+
+    throw new ManualActionRequired("נדרשת בדיקה ידנית של המקור הרשמי", {
+      requiredStep: "חיפוש פרויקט באתר 'דירה בהנחה'",
+      explanation: `האתר הרשמי של 'דירה בהנחה' דורש בדיקה אינטראקטיבית (CAPTCHA) ולא חושף API יציב. יש לפתוח את המקור ולחפש לפי מספר הגרלה ${lotteryIdentifier.value}.`,
+      searchValue: lotteryIdentifier.value,
+      sourceUrl: "https://www.dira.moch.gov.il/ProjectsList",
+      metadata: { lotteryNumber: lotteryIdentifier.value },
+    });
+  }
+}
+
 export function getSourceAdapter(sourceKey: string): SourceAdapter | null {
-  return sourceKey === "asia-cyrus" ? new AsiaCyrusAdapter() : null;
+  if (sourceKey === "asia-cyrus") return new AsiaCyrusAdapter();
+  if (sourceKey === "discounted-housing") return new DiscountedHousingAdapter();
+  return null;
 }
 
 function buildSearchTerms(context: SourceResearchContext) {
