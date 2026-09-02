@@ -1,6 +1,6 @@
 import { config } from "dotenv";
-import { claimNextResearchJob, closeDatabase, completeResearchJob, failResearchJob, getDatabase, getResearchContext, skipUnimplementedResearchJob } from "@diratrack/database";
-import { getSourceAdapter } from "@diratrack/source-adapters";
+import { claimNextResearchJob, closeDatabase, completeResearchJob, deferResearchJobForManualAction, failResearchJob, getDatabase, getResearchContext, skipUnimplementedResearchJob } from "@diratrack/database";
+import { getSourceAdapter, ManualActionRequiredError } from "@diratrack/source-adapters";
 
 config({ path: new URL("../../../.env", import.meta.url), quiet: true });
 
@@ -32,6 +32,11 @@ async function poll() {
           await completeResearchJob(db, job, discoveries);
           console.log(`[research-worker] ${sourceKey} completed with ${discoveries.length} result(s)`);
         } catch (error) {
+          if (error instanceof ManualActionRequiredError) {
+            await deferResearchJobForManualAction(db, job, error.action);
+            console.log(`[research-worker] ${sourceKey} is waiting for a manual action`);
+            return;
+          }
           console.error(`[research-worker] ${sourceKey} failed`, error);
           await failResearchJob(db, job, error);
         }

@@ -28,7 +28,7 @@ export async function POST(request: Request, context: Context) {
   if (unknownSourceKeys?.length) {
     return NextResponse.json({ error: "Unknown source keys", unknownSourceKeys }, { status: 400 });
   }
-  if ((!body.sourceKeys || body.sourceKeys.includes("asia-cyrus")) && body.externalDataConsent !== true) {
+  if ((!body.sourceKeys || body.sourceKeys.some((key) => ["asia-cyrus", "discounted-housing"].includes(key))) && body.externalDataConsent !== true) {
     return NextResponse.json({ error: "Explicit consent is required before sending project data to an external source" }, { status: 400 });
   }
 
