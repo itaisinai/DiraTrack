@@ -334,6 +334,52 @@ export async function skipUnimplementedResearchJob(db: Database, job: NonNullabl
   });
 }
 
+export async function setResearchJobWaitingForUser(
+  db: Database,
+  job: NonNullable<Awaited<ReturnType<typeof claimNextResearchJob>>>,
+  action: { requiredStep: string; explanation: string; searchValue?: string; sourceUrl?: string; metadata?: Record<string, unknown> },
+) {
+  await db.transaction(async (transaction) => {
+    const [waitingJob] = await transaction
+      .update(researchJobs)
+      .set({ status: "waiting-for-user", progress: 50, lockedBy: null, lockedAt: null })
+      .where(and(eq(researchJobs.id, job.id), eq(researchJobs.status, "running"), eq(researchJobs.lockedBy, job.lockedBy!)))
+      .returning({ id: researchJobs.id });
+    if (!waitingJob) return;
+
+    if (job.sourceCheckId) {
+      await transaction
+        .update(sourceChecks)
+        .set({ status: "waiting-for-user", progress: 50, manualAction: action })
+        .where(and(eq(sourceChecks.id, job.sourceCheckId), eq(sourceChecks.projectId, job.projectId)));
+    }
+
+    const [jobCounts] = await transaction
+      .select({
+        total: sql<number>`count(*)::int`,
+        hasRunning: sql<number>`count(*) filter (where ${researchJobs.status} = 'running')::int`,
+        hasWaiting: sql<number>`count(*) filter (where ${researchJobs.status} = 'waiting-for-user')::int`,
+      })
+      .from(researchJobs)
+      .where(eq(researchJobs.researchRunId, job.researchRunId!));
+
+    const hasRunning = (jobCounts?.hasRunning ?? 0) > 0;
+    const hasWaiting = (jobCounts?.hasWaiting ?? 0) > 0;
+
+    if (hasRunning) {
+      await transaction
+        .update(researchRuns)
+        .set({ status: "running" })
+        .where(eq(researchRuns.id, job.researchRunId!));
+    } else if (hasWaiting) {
+      await transaction
+        .update(researchRuns)
+        .set({ status: "waiting-for-user" })
+        .where(eq(researchRuns.id, job.researchRunId!));
+    }
+  });
+}
+
 async function updateRunCompletion(transaction: Transaction, researchRunId: string, now: Date) {
   const [run] = await transaction
     .select({ status: researchRuns.status })
