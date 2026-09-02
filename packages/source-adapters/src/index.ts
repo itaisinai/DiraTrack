@@ -3,6 +3,13 @@ export interface SourceResearchContext { project: { name: string; city: string; 
 export interface SourceDiscoveryResult { externalId: string; title: string; sourceUrl: string; summary: string; matchingIdentifiers: ResearchIdentifier[]; metadata: Record<string, unknown>; }
 export interface SourceAdapter { readonly id: string; discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]>; }
 
+export interface ManualResearchAction { title: string; description: string; url: string; searchValue?: string; }
+
+export class ManualActionRequiredError extends Error {
+  readonly action: ManualResearchAction;
+  constructor(action: ManualResearchAction) { super(action.description); this.name = "ManualActionRequiredError"; this.action = action; }
+}
+
 export const mvpSourceCatalog = [
   { key: "discounted-housing", name: "דירה בהנחה", category: "official", baseUrl: "https://www.dira.moch.gov.il", adapterKey: "discounted-housing" },
   { key: "israel-land-authority", name: "רשות מקרקעי ישראל", category: "official", baseUrl: "https://www.gov.il/he/departments/israel_land_authority", adapterKey: "israel-land-authority" },
@@ -56,8 +63,22 @@ export class AsiaCyrusAdapter implements SourceAdapter {
   }
 }
 
+export class DiscountedHousingAdapter implements SourceAdapter {
+  readonly id = "discounted-housing";
+
+  async discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]> {
+    const lotteryNumber = context.identifiers.find((identifier) => identifier.type === "lottery-number")?.value.trim();
+    const description = lotteryNumber
+      ? `יש לפתוח את רשימת ההגרלות הרשמית ולחפש את הגרלה ${lotteryNumber}. האתר דורש בדיקה אינטראקטיבית ולכן DiraTrack אינו מסמן תוצאה כאוטומטית.`
+      : "יש לפתוח את רשימת ההגרלות הרשמית. חסר מספר הגרלה שמאפשר למקד את החיפוש.";
+    throw new ManualActionRequiredError({ title: lotteryNumber ? `חיפוש הגרלה ${lotteryNumber} באתר הרשמי` : "חיפוש באתר דירה בהנחה", description, url: "https://www.dira.moch.gov.il/ProjectsList", searchValue: lotteryNumber });
+  }
+}
+
 export function getSourceAdapter(sourceKey: string): SourceAdapter | null {
-  return sourceKey === "asia-cyrus" ? new AsiaCyrusAdapter() : null;
+  if (sourceKey === "asia-cyrus") return new AsiaCyrusAdapter();
+  if (sourceKey === "discounted-housing") return new DiscountedHousingAdapter();
+  return null;
 }
 
 function buildSearchTerms(context: SourceResearchContext) {

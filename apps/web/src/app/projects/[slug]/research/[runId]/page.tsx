@@ -115,12 +115,20 @@ function LiveResearchPage() {
 export default LiveResearchPage;
 
 function SourceCard({ check }: { check: SourceCheck }) {
+  const manualAction = parseManualAction(check.manualAction);
   return <article className="rounded-xl border border-[var(--border)] bg-white p-5">
     <div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{check.source.name}</h3><p className="mt-1 text-xs text-[var(--muted)]">{categoryLabel(check.source.category)}</p></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${sourceStatusStyle(check.status)}`}>{sourceStatusLabel(check)}</span></div>
     <p className="mt-4 text-sm text-[var(--muted)]">{sourceExplanation(check)}</p>
-    {check.status === "waiting-for-user" && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">נדרשת פעולה ידנית לפני שניתן להמשיך בבדיקת המקור.</p>}
-    {check.source.baseUrl && <a href={check.source.baseUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-semibold text-[var(--primary)]">פתיחת המקור ↗</a>}
+    {check.status === "waiting-for-user" && <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><strong>{manualAction?.title ?? "נדרשת פעולה ידנית"}</strong><p className="mt-1">{manualAction?.description ?? "נדרשת פעולה ידנית לפני שניתן להמשיך בבדיקת המקור."}</p>{manualAction?.searchValue && <p className="mt-2">ערך לחיפוש: <bdi className="font-bold">{manualAction.searchValue}</bdi></p>}</div>}
+    {(manualAction?.url ?? check.source.baseUrl) && <a href={manualAction?.url ?? check.source.baseUrl!} target="_blank" rel="noreferrer" className="mt-4 inline-block text-sm font-semibold text-[var(--primary)]">פתיחת המקור ↗</a>}
   </article>;
+}
+
+function parseManualAction(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const action = value as Record<string, unknown>;
+  if (typeof action.title !== "string" || typeof action.description !== "string" || typeof action.url !== "string") return null;
+  return { title: action.title, description: action.description, url: action.url, searchValue: typeof action.searchValue === "string" ? action.searchValue : undefined };
 }
 
 function FindingRunStatus({ isRelevant }: { isRelevant: boolean | null }) {
