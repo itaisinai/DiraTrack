@@ -3,7 +3,11 @@ import test from "node:test";
 import { getDatabase } from "./index.ts";
 import { createProject, ensureLocalUser } from "./projects.ts";
 
-test("createProject generates unique slugs for duplicate names", async () => {
+// Integration tests that require a real database connection
+// Skip if DATABASE_URL is not set
+const shouldSkip = !process.env.DATABASE_URL;
+
+test("createProject generates unique slugs for duplicate names", { skip: shouldSkip }, async () => {
   const db = getDatabase();
   const user = await ensureLocalUser(db);
 
@@ -29,7 +33,7 @@ test("createProject generates unique slugs for duplicate names", async () => {
   assert.ok(project2.currentSlug.match(/-[a-z0-9]{4}$/));
 });
 
-test("createProject preserves readable slugs", async () => {
+test("createProject preserves readable slugs", { skip: shouldSkip }, async () => {
   const db = getDatabase();
   const user = await ensureLocalUser(db);
 
@@ -44,7 +48,7 @@ test("createProject preserves readable slugs", async () => {
   assert.ok(!project.currentSlug.match(/-[a-z0-9]{4}$/));
 });
 
-test("createProject handles concurrent creation with same name", async () => {
+test("createProject handles concurrent creation with same name", { skip: shouldSkip }, async () => {
   const db = getDatabase();
   const user = await ensureLocalUser(db);
 
