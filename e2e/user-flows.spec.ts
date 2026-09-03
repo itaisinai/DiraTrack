@@ -87,10 +87,9 @@ test.describe("User Flow - Project Creation", () => {
 
     await page.getByRole("textbox").first().fill(customMessage);
 
-    // Wait for some parsing
-    await page.waitForTimeout(500);
-
+    // Wait for create button to be enabled
     const createButton = page.getByRole("button", { name: /יצירת הפרויקט/i });
+    await expect(createButton).toBeEnabled({ timeout: 5000 });
     await createButton.click();
 
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
@@ -99,8 +98,9 @@ test.describe("User Flow - Project Creation", () => {
     // Create another project with same pattern
     await page.goto("/projects/new");
     await page.getByRole("textbox").first().fill(customMessage);
-    await page.waitForTimeout(500);
-    await page.getByRole("button", { name: /יצירת הפרויקט/i }).click();
+    const createButton2 = page.getByRole("button", { name: /יצירת הפרויקט/i });
+    await expect(createButton2).toBeEnabled({ timeout: 5000 });
+    await createButton2.click();
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
     const url2 = page.url();
 

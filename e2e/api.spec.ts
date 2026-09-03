@@ -355,9 +355,10 @@ test.describe("API - Manual Action Resolution", () => {
       }
     );
 
-    expect(response.status()).toBe(202);
+    expect(response.status()).toBe(201); // 201 Created - finding resource was created
     const data = await response.json();
     expect(data).toHaveProperty("check");
+    expect(data).toHaveProperty("finding");
   });
 
   test("POST /api/projects/:slug/research-runs/:runId/source-checks/:checkId/dismiss dismisses manual action", async ({ request }) => {
@@ -386,12 +387,18 @@ test.describe("API - Manual Action Resolution", () => {
     );
 
     const response = await request.post(
-      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}/source-checks/${check.id}/dismiss`
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}/source-checks/${check.id}/dismiss`,
+      {
+        data: {
+          reason: "מקור לא רלוונטי לפרויקט זה",
+        },
+      }
     );
 
     expect(response.status()).toBe(200);
     const data = await response.json();
     expect(data.check.status).toBe("skipped");
+    expect(data.check.dismissedReason).toBe("מקור לא רלוונטי לפרויקט זה");
   });
 
   test("POST /api/projects/:slug/research-runs/:runId/source-checks/:checkId/retry retries failed check", async ({ request }) => {

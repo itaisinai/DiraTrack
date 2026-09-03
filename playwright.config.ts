@@ -42,10 +42,11 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: "http://localhost:3000",
-    reuseExistingServer: true,
+    reuseExistingServer: false, // CRITICAL: Never reuse dev server - always use TEST_DATABASE_URL
     timeout: 120_000,
     env: {
       DATABASE_URL: process.env.TEST_DATABASE_URL,
+      TEST_DATABASE_URL: process.env.TEST_DATABASE_URL, // Pass to worker as well
     },
   },
 });

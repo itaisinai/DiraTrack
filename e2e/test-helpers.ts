@@ -1,6 +1,9 @@
 import { expect, APIRequestContext } from "@playwright/test";
-import { getDatabase, projects } from "@diratrack/database";
-import { ilike, or, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { projects } from "@diratrack/database";
+import { ilike, or } from "drizzle-orm";
+import postgres from "postgres";
+import { getTestDatabaseUrl } from "./test-database-guard";
 
 /**
  * Generate a unique test identifier for this test run
@@ -10,11 +13,21 @@ export function generateTestId(): string {
 }
 
 /**
+ * Get test database connection
+ * CRITICAL: Always uses TEST_DATABASE_URL, never DATABASE_URL
+ */
+function getTestDatabase() {
+  const testDbUrl = getTestDatabaseUrl(); // Validates it's a test database
+  const client = postgres(testDbUrl);
+  return drizzle(client);
+}
+
+/**
  * Clean up test data from the database
  * This should be called at the start of each test to ensure isolation
  */
 export async function cleanupTestData(testIdPrefix?: string): Promise<void> {
-  const db = getDatabase();
+  const db = getTestDatabase();
 
   // Build conditions for test projects
   const conditions = [
