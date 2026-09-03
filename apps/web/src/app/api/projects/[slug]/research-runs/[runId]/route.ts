@@ -12,7 +12,12 @@ type Context = { params: Promise<{ slug: string; runId: string }> };
 export async function GET(_request: Request, context: Context) {
   const resolved = await resolveResearchRun(context);
   if (!resolved) return NextResponse.json({ error: "Research run not found" }, { status: 404 });
-  return NextResponse.json({ researchRun: resolved.details });
+  // Flatten structure for API: researchRun is just the run, sourceChecks and findings are siblings
+  return NextResponse.json({
+    researchRun: resolved.details.run,
+    sourceChecks: resolved.details.sourceChecks,
+    findings: resolved.details.findings,
+  });
 }
 
 export async function DELETE(_request: Request, context: Context) {

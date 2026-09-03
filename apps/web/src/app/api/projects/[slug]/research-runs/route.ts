@@ -29,7 +29,7 @@ export async function POST(request: Request, context: Context) {
     return NextResponse.json({ error: "Unknown source keys", unknownSourceKeys }, { status: 400 });
   }
 
-  const sourcesThatRequireConsent = ["asia-cyrus", "discounted-housing"];
+  const sourcesThatRequireConsent = ["asia-cyrus"];
   const effectiveSourceKeys = body.sourceKeys ?? mvpSourceCatalog.map((s) => s.key);
   const requiresConsent = effectiveSourceKeys.some((key) => sourcesThatRequireConsent.includes(key));
 

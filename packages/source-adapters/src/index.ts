@@ -75,8 +75,50 @@ export class DiscountedHousingAdapter implements SourceAdapter {
   }
 }
 
+/**
+ * Create mock fetcher for E2E tests
+ * Returns deterministic responses without making external requests
+ */
+function createMockFetcher(): Fetcher {
+  return async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+    // Mock Asia Cyrus WordPress API
+    if (url.includes("asia-cyrus.co.il/wp-json/wp/v2/search")) {
+      const urlObj = new URL(url);
+      const searchTerm = urlObj.searchParams.get("search") || "";
+
+      // Return one mock result
+      const mockResults = [
+        {
+          id: 99999,
+          title: `פרויקט מדגם - ${searchTerm}`,
+          url: "https://asia-cyrus.co.il/projects/mock-project",
+          type: "post",
+          subtype: "our-work",
+        },
+      ];
+
+      return new Response(JSON.stringify(mockResults), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }) as any;
+    }
+
+    // Block any other external requests in test mode
+    throw new Error(
+      `MOCK ERROR: Attempted unmocked external request to ${url}. ` +
+      `Add mock handling or set LIVE_API_TESTS=1 for real requests.`
+    );
+  };
+}
+
 export function getSourceAdapter(sourceKey: string): SourceAdapter | null {
-  if (sourceKey === "asia-cyrus") return new AsiaCyrusAdapter();
+  // In E2E test mode, inject mock fetcher to prevent external requests
+  const isTestMode = process.env.TEST_DATABASE_URL && process.env.TEST_DATABASE_URL.includes("test") && !process.env.LIVE_API_TESTS;
+  const fetcher = isTestMode ? createMockFetcher() : fetch;
+
+  if (sourceKey === "asia-cyrus") return new AsiaCyrusAdapter(fetcher);
   if (sourceKey === "discounted-housing") return new DiscountedHousingAdapter();
   return null;
 }
