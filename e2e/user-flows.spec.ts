@@ -32,7 +32,7 @@ test.describe("User Flow - Project Creation", () => {
     await expect(page.getByRole("heading", { name: /הפרויקטים שלך/ })).toBeVisible();
 
     // Verify new project link exists
-    const newProjectLink = page.getByRole("link", { name: /פרויקט חדש/i });
+    const newProjectLink = page.getByRole("link", { name: /יצירת פרויקט/i });
     await expect(newProjectLink).toBeVisible();
   });
 
@@ -42,20 +42,31 @@ test.describe("User Flow - Project Creation", () => {
     await page.goto("/projects/new");
 
     // Verify project creation page
-    await expect(page.getByRole("heading", { name: /פרויקט חדש/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /הוספת פרויקט חדש/i })).toBeVisible();
 
     // Fill winning message
     const textarea = page.getByRole("textbox").first();
     await textarea.fill(WINNING_MESSAGE);
 
-    // Wait for parsing - use visibility of parsed fields
-    await expect(page.getByText("2642")).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText("324")).toBeVisible();
-    await expect(page.getByText("יהוד")).toBeVisible();
-    await expect(page.getByText(/אסיה סיירוס/)).toBeVisible();
+    // Continue to details step
+    const continueButton = page.getByRole("button", { name: /המשך לאימות פרטים/i });
+    await continueButton.click();
+
+    // Wait for details step - verify form fields are populated
+    await expect(page.getByLabel(/שם הפרויקט/)).toHaveValue(/324/, { timeout: 5000 });
+    await expect(page.getByLabel(/עיר/)).toHaveValue("יהוד");
+    await expect(page.getByLabel(/מספר הגרלה/)).toHaveValue("2642");
+    await expect(page.getByLabel(/יזם/)).toHaveValue(/אסיה סיירוס/);
+
+    // Continue to review step
+    const reviewButton = page.getByRole("button", { name: /מעבר לסקירה/i });
+    await reviewButton.click();
+
+    // Wait for review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
 
     // Create project
-    const createButton = page.getByRole("button", { name: /יצירת הפרויקט/i });
+    const createButton = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
     await createButton.click();
 
     // Wait for navigation to project page
@@ -65,9 +76,9 @@ test.describe("User Flow - Project Creation", () => {
     // Verify project overview is visible
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
-    // Verify identifiers are displayed
-    await expect(page.getByText("2642")).toBeVisible();
-    await expect(page.getByText("324")).toBeVisible();
+    // Verify identifiers are displayed - use first() to avoid strict mode violations
+    await expect(page.getByText("2642").first()).toBeVisible();
+    await expect(page.getByText("324").first()).toBeVisible();
 
     // Verify persistence after reload
     await page.reload();
@@ -87,9 +98,36 @@ test.describe("User Flow - Project Creation", () => {
 
     await page.getByRole("textbox").first().fill(customMessage);
 
-    // Wait for create button to be enabled
-    const createButton = page.getByRole("button", { name: /יצירת הפרויקט/i });
-    await expect(createButton).toBeEnabled({ timeout: 5000 });
+    // Navigate through the steps
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+
+    // Wait for details form and ensure required fields are filled
+    const nameField = page.getByLabel(/שם הפרויקט/);
+    await expect(nameField).toBeVisible();
+
+    // Ensure both required fields (name and city) are filled
+    const nameValue = await nameField.inputValue();
+    if (!nameValue) {
+      await nameField.fill(`פרויקט טסט ${testId}`);
+    }
+
+    const cityField = page.getByLabel(/עיר/);
+    const cityValue = await cityField.inputValue();
+    if (!cityValue) {
+      await cityField.fill("יהוד");
+    }
+
+    // Ensure the form button is enabled (validates required fields are filled)
+    const reviewButton = page.getByRole("button", { name: /מעבר לסקירה/i });
+    await expect(reviewButton).toBeEnabled();
+    await reviewButton.click();
+
+    // Wait for review step to be visible
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible({ timeout: 5000 });
+
+    // Create button should be enabled
+    const createButton = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
+    await expect(createButton).toBeEnabled();
     await createButton.click();
 
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
@@ -98,8 +136,35 @@ test.describe("User Flow - Project Creation", () => {
     // Create another project with same pattern
     await page.goto("/projects/new");
     await page.getByRole("textbox").first().fill(customMessage);
-    const createButton2 = page.getByRole("button", { name: /יצירת הפרויקט/i });
-    await expect(createButton2).toBeEnabled({ timeout: 5000 });
+
+    // Navigate through the steps again
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+
+    // Wait for details form and ensure required fields are filled
+    const nameField2 = page.getByLabel(/שם הפרויקט/);
+    await expect(nameField2).toBeVisible();
+
+    const nameValue2 = await nameField2.inputValue();
+    if (!nameValue2) {
+      await nameField2.fill(`פרויקט טסט ${testId}`);
+    }
+
+    const cityField2 = page.getByLabel(/עיר/);
+    const cityValue2 = await cityField2.inputValue();
+    if (!cityValue2) {
+      await cityField2.fill("יהוד");
+    }
+
+    // Ensure the form button is enabled before clicking
+    const reviewButton2 = page.getByRole("button", { name: /מעבר לסקירה/i });
+    await expect(reviewButton2).toBeEnabled();
+    await reviewButton2.click();
+
+    // Wait for review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible({ timeout: 5000 });
+
+    const createButton2 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
+    await expect(createButton2).toBeEnabled();
     await createButton2.click();
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
     const url2 = page.url();
@@ -130,9 +195,9 @@ test.describe("User Flow - Project Dashboard", () => {
     // Navigate to dashboard
     await page.goto("/");
 
-    // Wait for projects to load
-    await expect(page.getByText("יהוד")).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText("תל אביב")).toBeVisible();
+    // Wait for projects to load - use first() to avoid strict mode violations
+    await expect(page.getByText("יהוד").first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("תל אביב").first()).toBeVisible();
   });
 
   test("Navigate between projects", async ({ page, request }) => {
@@ -162,7 +227,7 @@ test.describe("User Flow - Project Dashboard", () => {
   });
 });
 
-test.describe("User Flow - Source Selection", () => {
+test.describe("User Flow - Research Consent", () => {
   test("Source selection dialog shows available sources", async ({ page, request }) => {
     const testId = generateTestId();
     const { project } = await createTestProject(request, { testId });
@@ -170,7 +235,7 @@ test.describe("User Flow - Source Selection", () => {
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
     // Click research button
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     // Verify dialog appears
@@ -181,30 +246,25 @@ test.describe("User Flow - Source Selection", () => {
     await expect(page.getByText(/אסיה סיירוס/)).toBeVisible();
   });
 
-  test("Cannot start research without selecting sources", async ({ page, request }) => {
+  test("Cannot start research without consent", async ({ page, request }) => {
     const testId = generateTestId();
     const { project } = await createTestProject(request, { testId });
 
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
 
-    // Uncheck all sources if any are checked
-    const checkboxes = page.locator('input[type="checkbox"]').filter({ hasNotText: /הסכמה/ });
-    const count = await checkboxes.count();
-
-    for (let i = 0; i < count; i++) {
-      const checkbox = checkboxes.nth(i);
-      if (await checkbox.isChecked()) {
-        await checkbox.uncheck();
-      }
+    // Ensure consent checkbox is not checked
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
+    if (await consentCheckbox.isChecked()) {
+      await consentCheckbox.uncheck();
     }
 
-    // Start button should be disabled
-    const startButton = page.getByRole("button", { name: /התחלת המחקר/i });
+    // Start button should be disabled without consent
+    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
     await expect(startButton).toBeDisabled();
   });
 });
@@ -216,17 +276,17 @@ test.describe("User Flow - Consent Flow", () => {
 
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
 
-    // Verify consent checkbox exists
-    const consentCheckbox = page.locator('input[type="checkbox"]').filter({ hasText: /הסכמה/ }).first();
+    // Verify consent checkbox exists (look for checkbox near consent text)
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await expect(consentCheckbox).toBeVisible();
 
     // Start button disabled before consent
-    const startButton = page.getByRole("button", { name: /התחלת המחקר/i });
+    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
     await expect(startButton).toBeDisabled();
 
     // Check consent
@@ -242,17 +302,17 @@ test.describe("User Flow - Consent Flow", () => {
 
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
 
     // Give consent
-    const consentCheckbox = page.locator('input[type="checkbox"]').filter({ hasText: /הסכמה/ }).first();
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
     // Start research
-    const startButton = page.getByRole("button", { name: /התחלת המחקר/i });
+    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
     await startButton.click();
 
     // Verify navigation to research page
@@ -271,21 +331,21 @@ test.describe("User Flow - Research Progress", () => {
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
     // Start research
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
 
-    const consentCheckbox = page.locator('input[type="checkbox"]').filter({ hasText: /הסכמה/ }).first();
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
-    const startButton = page.getByRole("button", { name: /התחלת המחקר/i });
+    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
     await startButton.click();
 
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
 
-    // Wait for source cards to appear
-    await expect(page.getByText(/דירה בהנחה|אסיה סיירוס/)).toBeVisible({ timeout: 10000 });
+    // Wait for source cards to appear - use first() to avoid strict mode violation
+    await expect(page.getByText(/דירה בהנחה|אסיה סיירוס/).first()).toBeVisible({ timeout: 10000 });
 
     // Verify at least one source card is present
     const sourceCards = page.locator("article, [data-testid*='source'], [class*='source']");
@@ -302,15 +362,15 @@ test.describe("User Flow - Research Progress", () => {
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
     // Start research
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
 
-    const consentCheckbox = page.locator('input[type="checkbox"]').filter({ hasText: /הסכמה/ }).first();
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
-    const startButton = page.getByRole("button", { name: /התחלת המחקר/i });
+    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
     await startButton.click();
 
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
@@ -338,15 +398,15 @@ test.describe("User Flow - Manual Action Resolution", () => {
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
     // Start research
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
 
-    const consentCheckbox = page.locator('input[type="checkbox"]').filter({ hasText: /הסכמה/ }).first();
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
-    const startButton = page.getByRole("button", { name: /התחלת המחקר/i });
+    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
     await startButton.click();
 
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
@@ -373,31 +433,31 @@ test.describe("User Flow - Manual Action Resolution", () => {
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
     // Start research
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
 
-    const consentCheckbox = page.locator('input[type="checkbox"]').filter({ hasText: /הסכמה/ }).first();
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
-    const startButton = page.getByRole("button", { name: /התחלת המחקר/i });
+    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
     await startButton.click();
 
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
 
     // Wait for manual action button to appear
     await expect(async () => {
-      const noResultButton = page.getByRole("button", { name: /אין תוצאות|no result/i });
+      const noResultButton = page.getByRole("button", { name: /ללא תוצאה/i });
       await expect(noResultButton.first()).toBeVisible();
     }).toPass({ timeout: 30000, intervals: [1000, 2000] });
 
     // Click no result button
-    const noResultButton = page.getByRole("button", { name: /אין תוצאות|no result/i }).first();
+    const noResultButton = page.getByRole("button", { name: /ללא תוצאה/i }).first();
     await noResultButton.click();
 
-    // Verify status changed
-    await expect(page.getByText(/no-results|אין תוצאות/i)).toBeVisible({ timeout: 5000 });
+    // Verify action completed - the manual action card should disappear
+    await expect(noResultButton).not.toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -467,8 +527,8 @@ test.describe("User Flow - RTL Verification", () => {
   test("Hebrew text displays correctly", async ({ page }) => {
     await page.goto("/");
 
-    // Verify Hebrew text is present
-    await expect(page.getByText(/הפרויקטים שלך|פרויקט חדש/)).toBeVisible();
+    // Verify Hebrew text is present - check heading specifically
+    await expect(page.getByRole("heading", { name: /הפרויקטים שלך/ })).toBeVisible();
   });
 
   test("Text alignment is correct for RTL", async ({ page, request }) => {
@@ -497,7 +557,7 @@ test.describe("User Flow - Responsive @mobile", () => {
     await page.goto("/");
 
     await expect(page.getByRole("heading", { name: /הפרויקטים שלך/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /פרויקט חדש/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /יצירת פרויקט/i })).toBeVisible();
   });
 
   test("Project creation works on mobile", async ({ page }) => {
@@ -506,9 +566,12 @@ test.describe("User Flow - Responsive @mobile", () => {
     const textarea = page.getByRole("textbox").first();
     await textarea.fill(WINNING_MESSAGE);
 
-    await expect(page.getByText("2642")).toBeVisible({ timeout: 5000 });
+    // Navigate through the form steps
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+    await expect(page.getByLabel(/מספר הגרלה/)).toHaveValue("2642", { timeout: 5000 });
+    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
 
-    const createButton = page.getByRole("button", { name: /יצירת הפרויקט/i });
+    const createButton = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
     await createButton.click();
 
     await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
@@ -530,7 +593,7 @@ test.describe("User Flow - Responsive @mobile", () => {
 
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
 
-    const researchButton = page.getByRole("button", { name: /מחקר חדש/i });
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
     await researchButton.click();
 
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
@@ -574,12 +637,27 @@ test.describe("User Flow - Desktop Viewport @chromium", () => {
     // Wait for projects to load
     await expect(page.getByText(`פרויקט ${testId}-0`)).toBeVisible({ timeout: 5000 });
 
-    // On desktop, content should have reasonable max width
-    const mainContent = page.locator("main, [role='main']").first();
-    if (await mainContent.isVisible()) {
-      const contentWidth = await mainContent.evaluate((el) => el.getBoundingClientRect().width);
-      // Should not span full 1440px width (reasonable max width should be set)
-      expect(contentWidth).toBeLessThan(1400);
+    // On desktop (1440px), projects should display in a multi-column grid
+    // Verify by checking that project cards are positioned horizontally
+    const projectCards = page.locator('a[href^="/projects/"]').filter({ hasText: testId });
+    await expect(projectCards).toHaveCount(3);
+
+    // Get bounding boxes of first two project cards
+    const firstCard = projectCards.nth(0);
+    const secondCard = projectCards.nth(1);
+
+    const firstBox = await firstCard.boundingBox();
+    const secondBox = await secondCard.boundingBox();
+
+    // On desktop, cards should be side-by-side
+    // In RTL layout, second card may be to the left of first card (lower x value)
+    // The key test is that they have DIFFERENT x positions (not stacked vertically)
+    expect(secondBox).not.toBeNull();
+    expect(firstBox).not.toBeNull();
+    if (firstBox && secondBox) {
+      // Cards are side-by-side if their x positions differ significantly
+      const xDifference = Math.abs(secondBox.x - firstBox.x);
+      expect(xDifference).toBeGreaterThan(100); // At least 100px apart horizontally
     }
   });
 });

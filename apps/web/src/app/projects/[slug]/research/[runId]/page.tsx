@@ -39,8 +39,9 @@ function LiveResearchPage() {
   const fetchRun = useCallback(async () => {
     const response = await fetch(endpoint, { cache: "no-store" });
     if (!response.ok) throw new Error(response.status === 404 ? "המחקר לא נמצא" : "לא ניתן לטעון את המחקר");
-    const result = await response.json() as { researchRun: ResearchRunDetails };
-    return result.researchRun;
+    const result = await response.json() as { researchRun: { id: string; status: string; progress: number; createdAt: string; startedAt: string | null; completedAt: string | null }; sourceChecks: SourceCheck[]; findings: Array<{ id: string; sourceCheckId: string; title: string; summary: string; sourceUrl: string | null; verificationStatus: string; isRelevant: boolean | null; matchingIdentifiers: unknown }> };
+    // Reconstruct the nested structure the component expects
+    return { run: result.researchRun, sourceChecks: result.sourceChecks, findings: result.findings };
   }, [endpoint]);
 
   useEffect(() => {
@@ -69,7 +70,7 @@ function LiveResearchPage() {
   }, [details, fetchRun]);
 
   const progress = useMemo(() => {
-    if (!details?.sourceChecks.length) return details?.run.progress ?? 0;
+    if (!details?.sourceChecks?.length) return details?.run.progress ?? 0;
     return Math.round(details.sourceChecks.reduce((sum, check) => sum + check.progress, 0) / details.sourceChecks.length);
   }, [details]);
 

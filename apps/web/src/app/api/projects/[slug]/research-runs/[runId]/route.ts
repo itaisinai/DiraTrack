@@ -12,8 +12,7 @@ type Context = { params: Promise<{ slug: string; runId: string }> };
 export async function GET(_request: Request, context: Context) {
   const resolved = await resolveResearchRun(context);
   if (!resolved) return NextResponse.json({ error: "Research run not found" }, { status: 404 });
-  // getResearchRunDetails returns { run, sourceChecks, findings }
-  // Flatten to match API contract: researchRun at top level, sourceChecks and findings as siblings
+  // Flatten structure for API: researchRun is just the run, sourceChecks and findings are siblings
   return NextResponse.json({
     researchRun: resolved.details.run,
     sourceChecks: resolved.details.sourceChecks,
