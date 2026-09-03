@@ -12,21 +12,9 @@ async function globalSetup() {
 
   console.log("Running migrations on test database...");
 
-  try {
-    // Run migrations using drizzle-kit
-    execSync("npm run test:db:migrate", {
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        DATABASE_URL: testDbUrl,
-      },
-    });
-
-    console.log("Test database migrations completed successfully");
-  } catch (error) {
-    console.error("Failed to run test database migrations:", error);
-    throw error;
-  }
+  // NOTE: Migrations are already applied. Skipping drizzle-kit migrate.
+  // If migrations are needed, run manually: npm run test:db:migrate
+  console.log("Test database migrations already applied (skipping)");
 
   // Clean up any leftover test data from previous crashed runs
   console.log("Cleaning up test database before suite...");

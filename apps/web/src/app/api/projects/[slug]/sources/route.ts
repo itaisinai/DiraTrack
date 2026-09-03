@@ -15,7 +15,8 @@ export async function GET(_request: Request, context: Context) {
   const project = await resolveProject(context);
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-  const result = await project.db
+  // Query configured projectSources (if any)
+  const configuredSources = await project.db
     .select({
       sourceKey: sources.key,
       sourceName: sources.name,
@@ -30,7 +31,20 @@ export async function GET(_request: Request, context: Context) {
     .where(eq(projectSources.projectId, project.id))
     .orderBy(sources.category, sources.name);
 
-  const sourcesWithMetadata = result.map((row) => {
+  // If no sources configured yet, return catalog with defaults
+  const sourcesToReturn = configuredSources.length > 0
+    ? configuredSources
+    : mvpSourceCatalog.map((source) => ({
+        sourceKey: source.key,
+        sourceName: source.name,
+        category: source.category,
+        baseUrl: source.baseUrl,
+        adapterKey: source.adapterKey,
+        isEnabled: true, // Default to enabled
+        lastCheckedAt: null,
+      }));
+
+  const sourcesWithMetadata = sourcesToReturn.map((row) => {
     const adapter = row.adapterKey ? getSourceAdapter(row.sourceKey as string) : null;
     const isImplemented = adapter !== null;
 

@@ -162,12 +162,18 @@ export async function createTestProject(
 ): Promise<{ project: any }> {
   const testId = options.testId ?? generateTestId();
 
+  // Ensure all identifiers have an origin field (required by API)
+  const identifiers = (options.identifiers ?? []).map((id) => ({
+    ...id,
+    origin: id.origin ?? "manual",
+  }));
+
   const response = await request.post("/api/projects", {
     data: {
       name: options.name ?? `פרויקט ${testId}`,
       city: options.city ?? "תל אביב",
       developer: options.developer ?? null,
-      identifiers: options.identifiers ?? [],
+      identifiers,
     },
   });
 
