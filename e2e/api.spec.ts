@@ -301,7 +301,7 @@ test.describe("API - Manual Action Resolution", () => {
       `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
     );
     const runData = await runResponse.json();
-    const check = runData.sourceChecks.find((c: any) => c.sourceKey === "discounted-housing");
+    const check = runData.sourceChecks.find((c: any) => c.source.key === "discounted-housing");
 
     await waitForSourceCheckStatus(
       request,
@@ -336,7 +336,7 @@ test.describe("API - Manual Action Resolution", () => {
       `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
     );
     const runData = await runResponse.json();
-    const check = runData.sourceChecks.find((c: any) => c.sourceKey === "discounted-housing");
+    const check = runData.sourceChecks.find((c: any) => c.source.key === "discounted-housing");
 
     await waitForSourceCheckStatus(
       request,
@@ -376,7 +376,7 @@ test.describe("API - Manual Action Resolution", () => {
       `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
     );
     const runData = await runResponse.json();
-    const check = runData.sourceChecks.find((c: any) => c.sourceKey === "discounted-housing");
+    const check = runData.sourceChecks.find((c: any) => c.source.key === "discounted-housing");
 
     await waitForSourceCheckStatus(
       request,
@@ -416,7 +416,7 @@ test.describe("API - Manual Action Resolution", () => {
       `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
     );
     const runData = await runResponse.json();
-    const check = runData.sourceChecks.find((c: any) => c.sourceKey === "asia-cyrus");
+    const check = runData.sourceChecks.find((c: any) => c.source.key === "asia-cyrus");
 
     // If the check is not in failed state, we can't test retry
     // This test might need to be tagged as @live or use specific mocking
@@ -561,7 +561,7 @@ test.describe("API - Live Integration @live", () => {
 
       // Verify we got actual results
       const asiaCyrusCheck = data.sourceChecks.find(
-        (c: any) => c.sourceKey === "asia-cyrus"
+        (c: any) => c.source.key === "asia-cyrus"
       );
       expect(asiaCyrusCheck).toBeTruthy();
       expect(asiaCyrusCheck.status).toBe("results-found");
