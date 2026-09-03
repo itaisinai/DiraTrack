@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { ManualActionCard } from "@/components/manual-action-card";
+import { ResearchSummary } from "@/components/research/ResearchSummary";
 import { encodeRouteSegment } from "@/lib/route-segment";
 
 interface SourceCheck {
@@ -22,7 +24,9 @@ interface ResearchRunDetails {
   findings: Array<{ id: string; sourceCheckId: string; title: string; summary: string; sourceUrl: string | null; verificationStatus: string; isRelevant: boolean | null; matchingIdentifiers: unknown }>;
 }
 
-const activeStatuses = new Set(["pending", "running", "waiting-for-user"]);
+const activeStatuses = new Set(["pending", "running"]);
+const terminalStatuses = new Set(["completed", "completed-with-errors", "failed", "cancelled"]);
+const waitingStatuses = new Set(["waiting-for-user"]);
 
 function LiveResearchPage() {
   const { slug, runId } = useParams<{ slug: string; runId: string }>();
@@ -43,16 +47,82 @@ function LiveResearchPage() {
     void fetchRun().then(setDetails).catch((caught) => setError(caught instanceof Error ? caught.message : "לא ניתן לטעון את המחקר"));
   }, [fetchRun]);
 
+  // Adaptive polling: 2s for active, 10s for waiting-for-user, stop for terminal states
   useEffect(() => {
-    if (!details || !activeStatuses.has(details.run.status)) return;
-    const interval = window.setInterval(() => void fetchRun().then(setDetails).catch(() => undefined), 2_000);
-    return () => window.clearInterval(interval);
+    if (!details) return;
+
+    const status = details.run.status;
+    if (terminalStatuses.has(status)) {
+      // Stop polling for terminal states
+      return;
+    }
+
+    // Determine polling interval based on status
+    const interval = waitingStatuses.has(status) ? 10_000 : 2_000;
+
+    const timer = window.setInterval(
+      () => void fetchRun().then(setDetails).catch(() => undefined),
+      interval
+    );
+
+    return () => window.clearInterval(timer);
   }, [details, fetchRun]);
 
   const progress = useMemo(() => {
     if (!details?.sourceChecks.length) return details?.run.progress ?? 0;
     return Math.round(details.sourceChecks.reduce((sum, check) => sum + check.progress, 0) / details.sourceChecks.length);
   }, [details]);
+
+  const isTerminalState = useMemo(() => {
+    return details ? terminalStatuses.has(details.run.status) : false;
+  }, [details]);
+
+  // Calculate summary data for terminal state
+  const summaryData = useMemo(() => {
+    if (!details || !isTerminalState) return null;
+
+    const completedCount = details.sourceChecks.filter(
+      (check) => check.status === "completed" || check.status === "results-found" || check.status === "no-results"
+    ).length;
+
+    const failedCount = details.sourceChecks.filter(
+      (check) => check.status === "failed"
+    ).length;
+
+    const skippedCount = details.sourceChecks.filter(
+      (check) => check.status === "skipped"
+    ).length;
+
+    const findingsAwaitingReview = details.findings.filter(
+      (finding) => finding.isRelevant !== false && ["unverified", "requires-review", "awaiting-approval"].includes(finding.verificationStatus)
+    ).length;
+
+    // Calculate duration
+    let duration: string | null = null;
+    if (details.run.startedAt && details.run.completedAt) {
+      const start = new Date(details.run.startedAt).getTime();
+      const end = new Date(details.run.completedAt).getTime();
+      const durationMs = end - start;
+      const minutes = Math.floor(durationMs / 60000);
+      const seconds = Math.floor((durationMs % 60000) / 1000);
+      duration = minutes > 0 ? `${minutes} דקות ו-${seconds} שניות` : `${seconds} שניות`;
+    }
+
+    const hasPartialCompletion = details.run.status === "completed-with-errors" || failedCount > 0 || skippedCount > 0;
+
+    return {
+      run: details.run,
+      sourceChecks: details.sourceChecks,
+      totalSources: details.sourceChecks.length,
+      completedCount,
+      failedCount,
+      skippedCount,
+      findingsCount: details.findings.length,
+      findingsAwaitingReview,
+      duration,
+      hasPartialCompletion,
+    };
+  }, [details, isTerminalState]);
 
   async function cancelRun() {
     setCancelling(true);
@@ -68,20 +138,50 @@ function LiveResearchPage() {
     }
   }
 
+  async function handleRetrySource(sourceCheckId: string) {
+    const retryEndpoint = `/api/projects/${encodedSlug}/research-runs/${encodeURIComponent(runId)}/source-checks/${encodeURIComponent(sourceCheckId)}/retry`;
+    const response = await fetch(retryEndpoint, { method: "POST" });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: "לא הצלחנו לנסות שוב" }));
+      throw new Error(error.error ?? "לא הצלחנו לנסות שוב");
+    }
+    // Refresh the data
+    setDetails(await fetchRun());
+  }
+
   return <AppShell>
     <header className="mb-7 flex flex-wrap items-start justify-between gap-4">
       <div>
         <Link href={`/projects/${encodedSlug}`} className="text-sm font-medium text-[var(--primary)]">→ חזרה לסקירת הפרויקט</Link>
-        <p className="mb-2 mt-5 text-sm text-[var(--muted)]">מחקר חי</p>
+        <p className="mb-2 mt-5 text-sm text-[var(--muted)]">{isTerminalState ? "סיכום מחקר" : "מחקר חי"}</p>
         <h1 className="text-3xl font-bold">בדיקת מקורות הפרויקט</h1>
-        <p className="mt-2 max-w-2xl text-[var(--muted)]">המערכת בודקת את המקורות שהוגדרו לפרויקט. אף פרט בפרויקט לא ישתנה אוטומטית בעקבות המחקר.</p>
+        <p className="mt-2 max-w-2xl text-[var(--muted)]">
+          {isTerminalState
+            ? "המחקר הסתיים. להלן סיכום התוצאות."
+            : "המערכת בודקת את המקורות שהוגדרו לפרויקט. אף פרט בפרויקט לא ישתנה אוטומטית בעקבות המחקר."}
+        </p>
       </div>
-      {details && activeStatuses.has(details.run.status) && <button onClick={cancelRun} disabled={cancelling} className="rounded-lg border border-red-300 bg-white px-5 py-3 font-semibold text-red-700 disabled:opacity-60">{cancelling ? "מבטל…" : "ביטול המחקר"}</button>}
+      {details && !isTerminalState && (activeStatuses.has(details.run.status) || waitingStatuses.has(details.run.status)) && (
+        <button onClick={cancelRun} disabled={cancelling} className="rounded-lg border border-red-300 bg-white px-5 py-3 font-semibold text-red-700 disabled:opacity-60">
+          {cancelling ? "מבטל…" : "ביטול המחקר"}
+        </button>
+      )}
     </header>
 
     {error && <p className="mb-5 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {!details && !error && <div className="rounded-xl border border-[var(--border)] bg-white p-8 text-[var(--muted)]">טוען את מצב המחקר…</div>}
-    {details && <>
+
+    {/* Terminal state: show summary */}
+    {details && isTerminalState && summaryData && (
+      <ResearchSummary
+        projectSlug={slug}
+        data={summaryData}
+        onRetrySource={handleRetrySource}
+      />
+    )}
+
+    {/* Active/waiting state: show live progress */}
+    {details && !isTerminalState && <>
       <section className="rounded-xl border border-[var(--border)] bg-white p-6">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm text-[var(--muted)]">מצב המחקר</p><h2 className="mt-1 text-xl font-bold">{runStatusLabel(details.run.status)}</h2></div><strong className="text-2xl text-[var(--primary)]">{progress}%</strong></div>
         <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100" aria-label={`התקדמות ${progress}%`}><div className="h-full rounded-full bg-[var(--primary)] transition-[width]" style={{ width: `${progress}%` }} /></div>
@@ -93,6 +193,30 @@ function LiveResearchPage() {
 
       <section className="mt-7">
         <div className="mb-4"><h2 className="text-xl font-bold">מקורות במחקר</h2><p className="mt-1 text-sm text-[var(--muted)]">מצב הבדיקה מוצג בנפרד לכל מקור.</p></div>
+
+        {details.sourceChecks.some((check) => check.status === "waiting-for-user") && (
+          <div className="mb-5 space-y-4">
+            <h3 className="text-lg font-bold">מקורות הממתינים לפעולה ידנית</h3>
+            {details.sourceChecks
+              .filter((check) => check.status === "waiting-for-user")
+              .map((check) => {
+                const manualAction = parseManualAction(check.manualAction);
+                if (!manualAction) return null;
+                return (
+                  <ManualActionCard
+                    key={check.id}
+                    sourceCheckId={check.id}
+                    sourceName={check.source.name}
+                    manualAction={manualAction}
+                    projectSlug={encodedSlug}
+                    runId={runId}
+                    onActionComplete={() => void fetchRun().then(setDetails).catch(() => undefined)}
+                  />
+                );
+              })}
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-2">
           {details.sourceChecks.map((check) => <SourceCard key={check.id} check={check} />)}
         </div>
