@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 import pg from "pg";
+import { validateTestDatabaseUrl } from "./test-database-guard";
 
 config({ path: new URL("../.env", import.meta.url) });
 
@@ -11,12 +12,8 @@ async function globalTeardown() {
     return;
   }
 
-  // Safety check: ensure we're using a test database
-  if (!testDbUrl.includes("test")) {
-    throw new Error(
-      `Safety check failed: TEST_DATABASE_URL must contain "test" in the name. Got: ${testDbUrl}`
-    );
-  }
+  // Safety check: validate database name is exactly a test database
+  validateTestDatabaseUrl(testDbUrl);
 
   console.log("Cleaning up test database...");
 
