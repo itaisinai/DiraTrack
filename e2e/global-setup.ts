@@ -11,30 +11,16 @@ async function globalSetup() {
   // Step 1: Validate TEST_DATABASE_URL
   const testDbUrl = getTestDatabaseUrl(); // Validates it's a test database
 
-  // Step 2: Check if migrations are needed and run them
-  console.log("Checking test database migrations...");
-  const client = postgres(testDbUrl);
+  // Step 2: ALWAYS run migrations (drizzle-kit migrate is idempotent)
+  console.log("Running migrations on test database...");
   try {
-    const db = drizzle(client);
-    // Try to query a known table to see if schema exists
-    try {
-      await db.select().from(projects).limit(1);
-      console.log("Test database schema is up to date");
-    } catch (error) {
-      // Schema doesn't exist or is outdated, run migrations
-      console.log("Running migrations on test database...");
-      try {
-        execSync("npm run test:db:migrate", {
-          stdio: "inherit",
-          env: { ...process.env, DATABASE_URL: testDbUrl },
-        });
-      } catch (migrationError) {
-        console.error("FATAL: Failed to run migrations on test database");
-        throw migrationError;
-      }
-    }
-  } finally {
-    await client.end();
+    execSync("npm run test:db:migrate", {
+      stdio: "inherit",
+      env: { ...process.env, DATABASE_URL: testDbUrl },
+    });
+  } catch (migrationError) {
+    console.error("FATAL: Failed to run migrations on test database");
+    throw migrationError; // Fail the suite if migrations fail
   }
 
   // Step 3: Clean up any leftover test data from previous crashed runs
