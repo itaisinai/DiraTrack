@@ -41,14 +41,37 @@ export async function ensureLocalUser(db: Database, displayName = "משתמש מ
 
 export async function createProject(db: Database, ownerId: string, input: CreateProjectInput) {
   const baseSlug = toProjectSlug(input.slug ?? input.name);
+  const maxAttempts = 10;
 
-  // Retry up to 5 times on slug collision
-  const maxAttempts = 5;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const currentSlug = attempt === 0 ? baseSlug : `${baseSlug}-${generateSlugSuffix()}`;
-
+  for (let globalAttempt = 0; globalAttempt < maxAttempts; globalAttempt++) {
     try {
       return await db.transaction(async (transaction) => {
+        // Find a unique slug by checking existing slugs within the transaction
+        let currentSlug = baseSlug;
+        let attempt = 0;
+
+        while (attempt < maxAttempts) {
+          // Check if this slug exists
+          const [existing] = await transaction
+            .select({ slug: projects.currentSlug })
+            .from(projects)
+            .where(eq(projects.currentSlug, currentSlug))
+            .limit(1);
+
+          if (!existing) {
+            // Slug is available, break and use it
+            break;
+          }
+
+          // Slug collision - generate a new one with a suffix
+          currentSlug = `${baseSlug}-${generateSlugSuffix()}`;
+          attempt++;
+        }
+
+        if (attempt >= maxAttempts) {
+          throw new Error("Failed to generate unique slug after multiple attempts");
+        }
+
         const [project] = await transaction
           .insert(projects)
           .values({
@@ -88,8 +111,7 @@ export async function createProject(db: Database, ownerId: string, input: Create
         return project;
       });
     } catch (error) {
-      // Retry only on unique constraint violation for slug
-      // Drizzle wraps the Postgres error in a cause property
+      // Retry the entire transaction on slug collision
       const pgError = error && typeof error === "object" && "cause" in error ? error.cause : error;
       const isSlugCollision = Boolean(
         pgError &&
@@ -101,10 +123,10 @@ export async function createProject(db: Database, ownerId: string, input: Create
           (pgError.constraint.includes("slug") || pgError.constraint.includes("current_slug")),
       );
 
-      if (!isSlugCollision || attempt === maxAttempts - 1) {
+      if (!isSlugCollision || globalAttempt === maxAttempts - 1) {
         throw error;
       }
-      // Continue to next attempt
+      // Retry the entire transaction with a new random suffix
     }
   }
 

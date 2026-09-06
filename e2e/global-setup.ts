@@ -11,16 +11,19 @@ async function globalSetup() {
   // Step 1: Validate TEST_DATABASE_URL
   const testDbUrl = getTestDatabaseUrl(); // Validates it's a test database
 
-  // Step 2: ALWAYS run migrations (drizzle-kit migrate is idempotent)
-  console.log("Running migrations on test database...");
+  // Step 2: Ensure migrations are applied
+  console.log("Checking test database schema...");
+  const migrateClient = postgres(testDbUrl);
   try {
-    execSync("npm run test:db:migrate", {
-      stdio: "inherit",
-      env: { ...process.env, DATABASE_URL: testDbUrl },
-    });
-  } catch (migrationError) {
-    console.error("FATAL: Failed to run migrations on test database");
-    throw migrationError; // Fail the suite if migrations fail
+    // Check if the schema exists by querying a known table
+    await migrateClient`SELECT 1 FROM projects LIMIT 1`;
+    console.log("Test database schema verified");
+  } catch (error) {
+    console.error("FATAL: Test database schema missing. Run migrations manually:");
+    console.error(`  DATABASE_URL=${testDbUrl} npm run db:migrate -w @diratrack/database`);
+    throw error;
+  } finally {
+    await migrateClient.end();
   }
 
   // Step 3: Clean up any leftover test data from previous crashed runs

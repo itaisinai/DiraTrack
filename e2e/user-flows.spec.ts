@@ -85,10 +85,113 @@ test.describe("User Flow - Project Creation", () => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
-  // Note: Duplicate name slug generation is tested in API tests (api.spec.ts line 511)
-  // This test was removed as it was redundant and caused timeouts in UI flow
-  // The API test "POST /api/projects with duplicate name creates unique slug" already
-  // verifies the slug collision retry logic works correctly
+  test("Create two projects with duplicate name - desktop", async ({ page }) => {
+    const testId = generateTestId();
+    const projectName = `פרויקט ${testId}`;
+    const city = "יהוד";
+
+    // Create first project
+    await page.goto("/projects/new");
+    await page.getByRole("textbox").first().fill(`שלום,\nזכית בהגרלה.\n${projectName}\n${city}`);
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+
+    // Wait for details form and manually fill required fields
+    const nameField = page.getByLabel(/שם הפרויקט/);
+    await expect(nameField).toBeVisible();
+    await nameField.fill(projectName);
+
+    const cityField = page.getByLabel(/עיר/);
+    await cityField.fill(city);
+
+    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
+
+    await page.getByRole("button", { name: /אישור ויצירת פרויקט/i }).click();
+    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
+    const url1 = page.url();
+    const slug1 = url1.split("/projects/")[1];
+
+    // Create second project with same name
+    await page.goto("/projects/new");
+    await page.getByRole("textbox").first().fill(`שלום,\nזכית בהגרלה.\n${projectName}\n${city}`);
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+
+    // Wait for details form and manually fill required fields
+    const nameField2 = page.getByLabel(/שם הפרויקט/);
+    await expect(nameField2).toBeVisible();
+    await nameField2.fill(projectName);
+
+    const cityField2 = page.getByLabel(/עיר/);
+    await cityField2.fill(city);
+
+    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
+
+    await page.getByRole("button", { name: /אישור ויצירת פרויקט/i }).click();
+    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
+    const url2 = page.url();
+    const slug2 = url2.split("/projects/")[1];
+
+    // Verify different slugs
+    expect(slug1).not.toBe(slug2);
+    expect(slug1).toBeTruthy();
+    expect(slug2).toBeTruthy();
+  });
+
+  test("Create two projects with duplicate name - mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+
+    const testId = generateTestId();
+    const projectName = `פרויקט ${testId}`;
+    const city = "יהוד";
+
+    // Create first project
+    await page.goto("/projects/new");
+    await page.getByRole("textbox").first().fill(`שלום,\nזכית בהגרלה.\n${projectName}\n${city}`);
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+
+    // Wait for details form and manually fill required fields
+    const nameField = page.getByLabel(/שם הפרויקט/);
+    await expect(nameField).toBeVisible();
+    await nameField.fill(projectName);
+
+    const cityField = page.getByLabel(/עיר/);
+    await cityField.fill(city);
+
+    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
+
+    await page.getByRole("button", { name: /אישור ויצירת פרויקט/i }).click();
+    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
+    const url1 = page.url();
+    const slug1 = url1.split("/projects/")[1];
+
+    // Create second project with same name
+    await page.goto("/projects/new");
+    await page.getByRole("textbox").first().fill(`שלום,\nזכית בהגרלה.\n${projectName}\n${city}`);
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+
+    // Wait for details form and manually fill required fields
+    const nameField2 = page.getByLabel(/שם הפרויקט/);
+    await expect(nameField2).toBeVisible();
+    await nameField2.fill(projectName);
+
+    const cityField2 = page.getByLabel(/עיר/);
+    await cityField2.fill(city);
+
+    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
+
+    await page.getByRole("button", { name: /אישור ויצירת פרויקט/i }).click();
+    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
+    const url2 = page.url();
+    const slug2 = url2.split("/projects/")[1];
+
+    // Verify different slugs
+    expect(slug1).not.toBe(slug2);
+    expect(slug1).toBeTruthy();
+    expect(slug2).toBeTruthy();
+  });
 });
 
 test.describe("User Flow - Project Dashboard", () => {

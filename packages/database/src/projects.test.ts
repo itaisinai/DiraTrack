@@ -5,27 +5,7 @@ import { eq, like } from "drizzle-orm";
 import postgres from "postgres";
 import { createProject, ensureLocalUser } from "./projects.ts";
 import { projects } from "./schema.ts";
-
-// Integration tests that require TEST_DATABASE_URL
-// These tests MUST have TEST_DATABASE_URL set and will fail if not
-function getTestDatabaseUrl(): string {
-  const testDbUrl = process.env.TEST_DATABASE_URL;
-  if (!testDbUrl) {
-    throw new Error(
-      "TEST_DATABASE_URL is required for integration tests. " +
-      "Run with: TEST_DATABASE_URL=postgresql://diratrack:diratrack@localhost:5432/diratrack_test npm test"
-    );
-  }
-
-  // Basic validation that it contains 'test'
-  if (!testDbUrl.toLowerCase().includes("test")) {
-    throw new Error(
-      `TEST_DATABASE_URL must contain 'test' for safety. Got: ${testDbUrl}`
-    );
-  }
-
-  return testDbUrl;
-}
+import { getTestDatabaseUrl } from "../../../e2e/test-database-guard.ts";
 
 function getTestDatabase() {
   const testDbUrl = getTestDatabaseUrl();
