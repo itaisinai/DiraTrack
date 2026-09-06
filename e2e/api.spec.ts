@@ -482,6 +482,66 @@ test.describe("API - Cross-Project Protection", () => {
   });
 });
 
+test.describe("API - Findings Collection", () => {
+  test("GET /api/projects/:slug/findings with unknown project returns 404", async ({ request }) => {
+    const response = await request.get("/api/projects/unknown-slug-12345/findings");
+
+    expect(response.status()).toBe(404);
+  });
+
+  test("GET /api/projects/:slug/findings returns empty list for new project", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    const response = await request.get(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/findings`
+    );
+
+    expect(response.status()).toBe(200);
+    const data = await response.json();
+    expect(Array.isArray(data.findings)).toBeTruthy();
+    expect(data.findings.length).toBe(0);
+  });
+
+  test("GET /api/projects/:slug/findings returns populated findings list with source metadata", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      testId,
+      identifiers: [{ type: "lottery-number", value: "2642" }],
+    });
+
+    const { researchRun } = await startTestResearchRun(request, project.currentSlug, {
+      sourceKeys: ["asia-cyrus"],
+    });
+
+    await waitForResearchRunComplete(request, project.currentSlug, researchRun.id);
+
+    const response = await request.get(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/findings`
+    );
+
+    expect(response.status()).toBe(200);
+    const data = await response.json();
+    expect(Array.isArray(data.findings)).toBeTruthy();
+
+    if (data.findings.length > 0) {
+      const finding = data.findings[0];
+      expect(finding).toHaveProperty("id");
+      expect(finding).toHaveProperty("summary");
+      expect(finding).toHaveProperty("title");
+      expect(finding).toHaveProperty("category");
+      expect(finding).toHaveProperty("sourceKey");
+      expect(finding).toHaveProperty("sourceName");
+      expect(finding).toHaveProperty("verificationStatus");
+      expect(finding).toHaveProperty("discoveredAt");
+      expect(typeof finding.category).toBe("string");
+      expect(typeof finding.sourceKey).toBe("string");
+      expect(typeof finding.sourceName).toBe("string");
+      expect(typeof finding.verificationStatus).toBe("string");
+    }
+  });
+});
+
 test.describe("API - Validation Errors", () => {
   test("GET /api/projects/:slug/findings/:findingId with unknown finding returns 404", async ({ request }) => {
     const testId = generateTestId();

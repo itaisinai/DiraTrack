@@ -85,112 +85,66 @@ test.describe("User Flow - Project Creation", () => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
-  test("Create two projects with duplicate name - desktop", async ({ page }) => {
+  test("Create two projects with duplicate name - desktop @chromium", async ({ page, request }) => {
     const testId = generateTestId();
     const projectName = `פרויקט ${testId}`;
-    const city = "יהוד";
 
-    // Create first project
-    await page.goto("/projects/new");
-    await page.getByRole("textbox").first().fill(`שלום,\nזכית בהגרלה.\n${projectName}\n${city}`);
-    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+    // Create first project via API
+    const { project: project1 } = await createTestProject(request, {
+      name: projectName,
+      city: "יהוד",
+      testId,
+    });
 
-    // Wait for details form and manually fill required fields
-    const nameField = page.getByLabel(/שם הפרויקט/);
-    await expect(nameField).toBeVisible();
-    await nameField.fill(projectName);
-
-    const cityField = page.getByLabel(/עיר/);
-    await cityField.fill(city);
-
-    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
-    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
-
-    await page.getByRole("button", { name: /אישור ויצירת פרויקט/i }).click();
-    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
-    const url1 = page.url();
-    const slug1 = url1.split("/projects/")[1];
-
-    // Create second project with same name
-    await page.goto("/projects/new");
-    await page.getByRole("textbox").first().fill(`שלום,\nזכית בהגרלה.\n${projectName}\n${city}`);
-    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
-
-    // Wait for details form and manually fill required fields
-    const nameField2 = page.getByLabel(/שם הפרויקט/);
-    await expect(nameField2).toBeVisible();
-    await nameField2.fill(projectName);
-
-    const cityField2 = page.getByLabel(/עיר/);
-    await cityField2.fill(city);
-
-    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
-    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
-
-    await page.getByRole("button", { name: /אישור ויצירת פרויקט/i }).click();
-    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
-    const url2 = page.url();
-    const slug2 = url2.split("/projects/")[1];
+    // Create second project with same name via API
+    const { project: project2 } = await createTestProject(request, {
+      name: projectName,
+      city: "יהוד",
+      testId,
+    });
 
     // Verify different slugs
-    expect(slug1).not.toBe(slug2);
-    expect(slug1).toBeTruthy();
-    expect(slug2).toBeTruthy();
+    expect(project1.currentSlug).not.toBe(project2.currentSlug);
+    expect(project1.currentSlug).toBeTruthy();
+    expect(project2.currentSlug).toBeTruthy();
+
+    // Navigate to both projects to confirm UI works
+    await page.goto(`/projects/${encodeURIComponent(project1.currentSlug)}`);
+    await expect(page.getByText(projectName)).toBeVisible();
+
+    await page.goto(`/projects/${encodeURIComponent(project2.currentSlug)}`);
+    await expect(page.getByText(projectName)).toBeVisible();
   });
 
-  test("Create two projects with duplicate name - mobile", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
-
+  test("Create two projects with duplicate name - mobile @mobile", async ({ page, request }) => {
     const testId = generateTestId();
     const projectName = `פרויקט ${testId}`;
-    const city = "יהוד";
 
-    // Create first project
-    await page.goto("/projects/new");
-    await page.getByRole("textbox").first().fill(`שלום,\nזכית בהגרלה.\n${projectName}\n${city}`);
-    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+    // Create first project via API
+    const { project: project1 } = await createTestProject(request, {
+      name: projectName,
+      city: "יהוד",
+      testId,
+    });
 
-    // Wait for details form and manually fill required fields
-    const nameField = page.getByLabel(/שם הפרויקט/);
-    await expect(nameField).toBeVisible();
-    await nameField.fill(projectName);
-
-    const cityField = page.getByLabel(/עיר/);
-    await cityField.fill(city);
-
-    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
-    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
-
-    await page.getByRole("button", { name: /אישור ויצירת פרויקט/i }).click();
-    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
-    const url1 = page.url();
-    const slug1 = url1.split("/projects/")[1];
-
-    // Create second project with same name
-    await page.goto("/projects/new");
-    await page.getByRole("textbox").first().fill(`שלום,\nזכית בהגרלה.\n${projectName}\n${city}`);
-    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
-
-    // Wait for details form and manually fill required fields
-    const nameField2 = page.getByLabel(/שם הפרויקט/);
-    await expect(nameField2).toBeVisible();
-    await nameField2.fill(projectName);
-
-    const cityField2 = page.getByLabel(/עיר/);
-    await cityField2.fill(city);
-
-    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
-    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
-
-    await page.getByRole("button", { name: /אישור ויצירת פרויקט/i }).click();
-    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
-    const url2 = page.url();
-    const slug2 = url2.split("/projects/")[1];
+    // Create second project with same name via API
+    const { project: project2 } = await createTestProject(request, {
+      name: projectName,
+      city: "יהוד",
+      testId,
+    });
 
     // Verify different slugs
-    expect(slug1).not.toBe(slug2);
-    expect(slug1).toBeTruthy();
-    expect(slug2).toBeTruthy();
+    expect(project1.currentSlug).not.toBe(project2.currentSlug);
+    expect(project1.currentSlug).toBeTruthy();
+    expect(project2.currentSlug).toBeTruthy();
+
+    // Navigate to both projects to confirm UI works on mobile
+    await page.goto(`/projects/${encodeURIComponent(project1.currentSlug)}`);
+    await expect(page.getByText(projectName)).toBeVisible();
+
+    await page.goto(`/projects/${encodeURIComponent(project2.currentSlug)}`);
+    await expect(page.getByText(projectName)).toBeVisible();
   });
 });
 
@@ -577,7 +531,7 @@ test.describe("User Flow - Responsive @mobile", () => {
     await page.goto("/");
 
     await expect(page.getByRole("heading", { name: /הפרויקטים שלך/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /יצירת פרויקט/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /יצירת פרויקט/i }).first()).toBeVisible();
   });
 
   test("Project creation works on mobile", async ({ page }) => {

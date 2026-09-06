@@ -9,9 +9,14 @@ import { encodeRouteSegment } from "@/lib/route-segment";
 interface Finding {
   id: string;
   summary: string;
+  title: string;
   category: string;
   sourceKey: string;
-  createdAt: string;
+  sourceName: string;
+  verificationStatus: string;
+  sourceUrl: string | null;
+  matchingIdentifiers: unknown;
+  discoveredAt: string;
 }
 
 function FindingsPage() {
@@ -86,11 +91,27 @@ function FindingsPage() {
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex-1">
-                  <h2 className="text-xl font-bold">{finding.summary}</h2>
+                  <h2 className="text-xl font-bold">{finding.title}</h2>
+                  <p className="mt-2 text-[var(--muted)]">{finding.summary}</p>
                   <p className="mt-2 text-sm text-[var(--muted)]">
-                    {finding.category} · {finding.sourceKey} ·{" "}
-                    {new Date(finding.createdAt).toLocaleDateString("he-IL")}
+                    {finding.category} · {finding.sourceName} · {finding.verificationStatus} ·{" "}
+                    {new Date(finding.discoveredAt).toLocaleDateString("he-IL")}
                   </p>
+                  {finding.sourceUrl && (
+                    <a
+                      href={finding.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-block text-sm text-[var(--primary)] underline"
+                    >
+                      מקור ↗
+                    </a>
+                  )}
+                  {Array.isArray(finding.matchingIdentifiers) && finding.matchingIdentifiers.length > 0 ? (
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      מזהים: {finding.matchingIdentifiers.map((id: unknown) => JSON.stringify(id)).join(', ')}
+                    </p>
+                  ) : null}
                 </div>
                 <Link
                   href={`/projects/${encodedSlug}/findings/${encodeRouteSegment(finding.id)}`}
