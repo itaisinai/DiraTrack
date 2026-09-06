@@ -527,8 +527,8 @@ test.describe("API - Validation Errors", () => {
   });
 });
 
-test.describe("API - Live Integration @live", () => {
-  test("Research run completes with real Asia Cyrus API", async ({ request }) => {
+test.describe("API - Live Integration", () => {
+  test("Research run completes with real Asia Cyrus API @live", async ({ request }) => {
     const testId = generateTestId();
     const { project } = await createTestProject(request, {
       testId,
