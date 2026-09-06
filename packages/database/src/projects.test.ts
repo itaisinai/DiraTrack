@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { drizzle } from "drizzle-orm/postgres-js";
-import { eq, like } from "drizzle-orm";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { eq } from "drizzle-orm";
+import pg from "pg";
 import { createProject, ensureLocalUser } from "./projects.ts";
 import { projects } from "./schema.ts";
+import * as schema from "./schema.ts";
 import { getTestDatabaseUrl } from "../../../e2e/test-database-guard.ts";
+
+const { Pool } = pg;
 
 function getTestDatabase() {
   const testDbUrl = getTestDatabaseUrl();
-  const client = postgres(testDbUrl);
-  return { db: drizzle(client), client };
+  const client = new Pool({ connectionString: testDbUrl });
+  return { db: drizzle(client, { schema }), client };
 }
 
 test("createProject generates unique slugs for duplicate names", async () => {
