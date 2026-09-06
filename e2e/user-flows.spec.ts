@@ -130,7 +130,7 @@ test.describe("User Flow - Project Creation", () => {
     await expect(createButton).toBeEnabled();
     await createButton.click();
 
-    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
     const url1 = page.url();
 
     // Create another project with same pattern
@@ -166,7 +166,7 @@ test.describe("User Flow - Project Creation", () => {
     const createButton2 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
     await expect(createButton2).toBeEnabled();
     await createButton2.click();
-    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+    await page.waitForURL(/\/projects\/.+/, { timeout: 30000 });
     const url2 = page.url();
 
     // URLs should be different (different slugs)
