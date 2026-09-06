@@ -1,4 +1,5 @@
 import {
+  configureProjectSources,
   ensureLocalUser,
   findProjectBySlug,
   getDatabase,
@@ -15,7 +16,10 @@ export async function GET(_request: Request, context: Context) {
   const project = await resolveProject(context);
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-  // Query configured projectSources (if any)
+  // Ensure project sources are initialized from catalog
+  await configureProjectSources(project.db, project.id, mvpSourceCatalog);
+
+  // Query configured projectSources
   const configuredSources = await project.db
     .select({
       sourceKey: sources.key,
@@ -31,20 +35,8 @@ export async function GET(_request: Request, context: Context) {
     .where(eq(projectSources.projectId, project.id))
     .orderBy(sources.category, sources.name);
 
-  // If no sources configured yet, return catalog with defaults
-  const sourcesToReturn = configuredSources.length > 0
-    ? configuredSources
-    : mvpSourceCatalog.map((source) => ({
-        sourceKey: source.key,
-        sourceName: source.name,
-        category: source.category,
-        baseUrl: source.baseUrl,
-        adapterKey: source.adapterKey,
-        isEnabled: true, // Default to enabled
-        lastCheckedAt: null,
-      }));
-
-  const sourcesWithMetadata = sourcesToReturn.map((row) => {
+  // Sources should always exist after configureProjectSources
+  const sourcesWithMetadata = configuredSources.map((row) => {
     const adapter = row.adapterKey ? getSourceAdapter(row.sourceKey as string) : null;
     const isImplemented = adapter !== null;
 
@@ -72,6 +64,9 @@ export async function GET(_request: Request, context: Context) {
 export async function PATCH(request: Request, context: Context) {
   const project = await resolveProject(context);
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+
+  // Ensure project sources are initialized from catalog
+  await configureProjectSources(project.db, project.id, mvpSourceCatalog);
 
   const body = await parseBody(request);
   if (body instanceof NextResponse) return body;
