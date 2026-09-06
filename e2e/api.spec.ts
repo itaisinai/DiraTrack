@@ -524,21 +524,44 @@ test.describe("API - Findings Collection", () => {
     const data = await response.json();
     expect(Array.isArray(data.findings)).toBeTruthy();
 
-    if (data.findings.length > 0) {
-      const finding = data.findings[0];
-      expect(finding).toHaveProperty("id");
-      expect(finding).toHaveProperty("summary");
-      expect(finding).toHaveProperty("title");
-      expect(finding).toHaveProperty("category");
-      expect(finding).toHaveProperty("sourceKey");
-      expect(finding).toHaveProperty("sourceName");
-      expect(finding).toHaveProperty("verificationStatus");
-      expect(finding).toHaveProperty("discoveredAt");
-      expect(typeof finding.category).toBe("string");
-      expect(typeof finding.sourceKey).toBe("string");
-      expect(typeof finding.sourceName).toBe("string");
-      expect(typeof finding.verificationStatus).toBe("string");
-    }
+    // Mocked Asia Cyrus returns exactly one deterministic finding
+    expect(data.findings.length).toBeGreaterThan(0);
+
+    const finding = data.findings[0];
+
+    // Verify all required DTO fields exist with correct types
+    expect(finding).toHaveProperty("id");
+    expect(typeof finding.id).toBe("string");
+
+    expect(finding).toHaveProperty("title");
+    expect(typeof finding.title).toBe("string");
+    expect(finding.title.length).toBeGreaterThan(0);
+
+    expect(finding).toHaveProperty("summary");
+    expect(typeof finding.summary).toBe("string");
+
+    expect(finding).toHaveProperty("category");
+    expect(typeof finding.category).toBe("string");
+
+    expect(finding).toHaveProperty("sourceKey");
+    expect(finding.sourceKey).toBe("asia-cyrus");
+
+    expect(finding).toHaveProperty("sourceName");
+    expect(finding.sourceName).toBe("אתר אסיה סיירוס");
+
+    expect(finding).toHaveProperty("verificationStatus");
+    expect(["requires-review", "verified", "rejected"]).toContain(finding.verificationStatus);
+
+    expect(finding).toHaveProperty("sourceUrl");
+    expect(typeof finding.sourceUrl).toBe("string");
+    expect(finding.sourceUrl).toMatch(/^https?:\/\//);
+
+    expect(finding).toHaveProperty("matchingIdentifiers");
+    expect(Array.isArray(finding.matchingIdentifiers)).toBeTruthy();
+
+    expect(finding).toHaveProperty("discoveredAt");
+    expect(typeof finding.discoveredAt).toBe("string");
+    expect(new Date(finding.discoveredAt).getTime()).toBeGreaterThan(0);
   });
 });
 

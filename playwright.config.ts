@@ -16,9 +16,6 @@ export default defineConfig({
   reporter: "html",
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
-  // Exclude @live tests from default suite (run with test:e2e:live instead)
-  grep: /./,
-  grepInvert: /@live/,
   use: {
     baseURL: "http://localhost:3000",
     trace: "on-first-retry",
@@ -26,16 +23,23 @@ export default defineConfig({
   },
   projects: [
     {
+      name: "api",
+      testMatch: "e2e/api.spec.ts",
+      grepInvert: /@live/,
+      use: {},
+    },
+    {
       name: "chromium",
+      testMatch: "e2e/user-flows.spec.ts",
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 900 },
       },
-      grep: /@chromium/,
-      grepInvert: /@mobile/,
+      grepInvert: /@mobile|@live/,
     },
     {
       name: "mobile",
+      testMatch: "e2e/user-flows.spec.ts",
       use: {
         ...devices["Pixel 5"],
         viewport: { width: 390, height: 844 },
@@ -43,6 +47,7 @@ export default defineConfig({
           "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
       },
       grep: /@mobile/,
+      grepInvert: /@live/,
     },
   ],
   webServer: {
