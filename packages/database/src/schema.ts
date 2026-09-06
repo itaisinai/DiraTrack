@@ -270,6 +270,8 @@ export const sourceChecks = pgTable(
       name: "source_checks_run_project_fk",
     }).onDelete("cascade"),
     uniqueIndex("source_checks_run_source_unique").on(table.researchRunId, table.sourceId),
+    index("source_checks_dismissed_at_idx").on(table.dismissedAt),
+    index("source_checks_last_checked_at_idx").on(table.lastCheckedAt),
     check("source_checks_progress_range_check", sql`${table.progress} between 0 and 100`),
   ],
 );
