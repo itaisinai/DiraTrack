@@ -134,15 +134,20 @@ test.describe("User Flow - Project Creation", () => {
     await page.getByRole("textbox").first().fill(winningMessage);
     await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
 
-    // Fill SAME project name
+    // Wait for details step to load
+    await expect(page.getByRole("heading", { name: /אימות והשלמת פרטים/i })).toBeVisible({ timeout: 5000 });
+
+    // Fill SAME project name and ensure city is filled
     await page.getByLabel(/שם הפרויקט/).clear();
     await page.getByLabel(/שם הפרויקט/).fill(projectName);
+    await page.getByLabel(/^עיר/).clear();
+    await page.getByLabel(/^עיר/).fill("יהוד");
 
     // Continue to review
     await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
 
-    // Create second project
-    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
+    // Create second project - wait for review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible({ timeout: 5000 });
     const createButton2 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
     await createButton2.click();
 
@@ -214,15 +219,20 @@ test.describe("User Flow - Project Creation", () => {
     await page.getByRole("textbox").first().fill(winningMessage);
     await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
 
-    // Fill SAME project name
+    // Wait for details step to load
+    await expect(page.getByRole("heading", { name: /אימות והשלמת פרטים/i })).toBeVisible({ timeout: 5000 });
+
+    // Fill SAME project name and ensure city is filled
     await page.getByLabel(/שם הפרויקט/).clear();
     await page.getByLabel(/שם הפרויקט/).fill(projectName);
+    await page.getByLabel(/^עיר/).clear();
+    await page.getByLabel(/^עיר/).fill("יהוד");
 
     // Continue to review
     await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
 
-    // Create second project
-    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
+    // Create second project - wait for review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible({ timeout: 5000 });
     const createButton2 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
     await createButton2.click();
 
@@ -338,7 +348,7 @@ test.describe("User Flow - Research Consent", () => {
     }
 
     // Start button should be disabled without consent
-    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
     await expect(startButton).toBeDisabled();
   });
 });
@@ -360,7 +370,7 @@ test.describe("User Flow - Consent Flow", () => {
     await expect(consentCheckbox).toBeVisible();
 
     // Start button disabled before consent
-    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
     await expect(startButton).toBeDisabled();
 
     // Check consent
@@ -386,7 +396,7 @@ test.describe("User Flow - Consent Flow", () => {
     await consentCheckbox.check();
 
     // Start research
-    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
     await startButton.click();
 
     // Verify navigation to research page
@@ -413,7 +423,7 @@ test.describe("User Flow - Research Progress", () => {
     const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
-    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
     await startButton.click();
 
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
@@ -444,7 +454,7 @@ test.describe("User Flow - Research Progress", () => {
     const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
-    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
     await startButton.click();
 
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
@@ -480,7 +490,7 @@ test.describe("User Flow - Manual Action Resolution", () => {
     const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
-    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
     await startButton.click();
 
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
@@ -515,7 +525,7 @@ test.describe("User Flow - Manual Action Resolution", () => {
     const consentCheckbox = page.locator('input[type="checkbox"]').first();
     await consentCheckbox.check();
 
-    const startButton = page.getByRole("button", { name: /אישור והתחלת מחקר/i });
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
     await startButton.click();
 
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
