@@ -16,6 +16,9 @@ export default defineConfig({
   reporter: "html",
   globalSetup: "./e2e/global-setup.ts",
   globalTeardown: "./e2e/global-teardown.ts",
+  // Exclude @live tests from default suite (run with test:e2e:live instead)
+  grep: /./,
+  grepInvert: /@live/,
   use: {
     baseURL: "http://localhost:3000",
     trace: "on-first-retry",

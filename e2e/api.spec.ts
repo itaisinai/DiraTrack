@@ -528,7 +528,7 @@ test.describe("API - Validation Errors", () => {
 });
 
 test.describe("API - Live Integration @live", () => {
-  test.skip("Research run completes with real Asia Cyrus API", async ({ request }) => {
+  test("Research run completes with real Asia Cyrus API", async ({ request }) => {
     const testId = generateTestId();
     const { project } = await createTestProject(request, {
       testId,

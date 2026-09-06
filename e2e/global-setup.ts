@@ -8,28 +8,48 @@ import { getTestDatabaseUrl } from "./test-database-guard";
 config({ path: new URL("../.env", import.meta.url) });
 
 async function globalSetup() {
+  // Step 1: Validate TEST_DATABASE_URL
   const testDbUrl = getTestDatabaseUrl(); // Validates it's a test database
 
-  console.log("Running migrations on test database...");
-
-  // NOTE: Migrations are already applied. Skipping drizzle-kit migrate.
-  // If migrations are needed, run manually: npm run test:db:migrate
-  console.log("Test database migrations already applied (skipping)");
-
-  // Clean up any leftover test data from previous crashed runs
-  console.log("Cleaning up test database before suite...");
+  // Step 2: Check if migrations are needed and run them
+  console.log("Checking test database migrations...");
+  const client = postgres(testDbUrl);
   try {
-    const client = postgres(testDbUrl);
     const db = drizzle(client);
-
-    // Delete all projects (cascade will handle related records)
-    await db.delete(projects);
-
+    // Try to query a known table to see if schema exists
+    try {
+      await db.select().from(projects).limit(1);
+      console.log("Test database schema is up to date");
+    } catch (error) {
+      // Schema doesn't exist or is outdated, run migrations
+      console.log("Running migrations on test database...");
+      try {
+        execSync("npm run test:db:migrate", {
+          stdio: "inherit",
+          env: { ...process.env, DATABASE_URL: testDbUrl },
+        });
+      } catch (migrationError) {
+        console.error("FATAL: Failed to run migrations on test database");
+        throw migrationError;
+      }
+    }
+  } finally {
     await client.end();
+  }
+
+  // Step 3: Clean up any leftover test data from previous crashed runs
+  console.log("Cleaning up test database before suite...");
+  const cleanupClient = postgres(testDbUrl);
+  try {
+    const cleanupDb = drizzle(cleanupClient);
+    // Delete all projects (cascade will handle related records)
+    await cleanupDb.delete(projects);
     console.log("Test database cleanup completed");
   } catch (error) {
-    console.warn("Warning during pre-suite cleanup:", error);
-    // Don't fail the suite if cleanup fails - might be empty database
+    console.error("FATAL: Failed to cleanup test database");
+    throw error; // Fail the suite if cleanup fails
+  } finally {
+    await cleanupClient.end();
   }
 }
 

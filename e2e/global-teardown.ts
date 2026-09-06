@@ -1,6 +1,7 @@
 import { config } from "dotenv";
 import pg from "pg";
 import { validateTestDatabaseUrl } from "./test-database-guard";
+import { closeTestDatabase } from "./test-helpers";
 
 config({ path: new URL("../.env", import.meta.url) });
 
@@ -16,6 +17,9 @@ async function globalTeardown() {
   validateTestDatabaseUrl(testDbUrl);
 
   console.log("Cleaning up test database...");
+
+  // Close shared test database connection from test-helpers
+  await closeTestDatabase();
 
   const client = new pg.Client({ connectionString: testDbUrl });
 

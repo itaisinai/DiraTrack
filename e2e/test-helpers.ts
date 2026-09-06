@@ -13,13 +13,31 @@ export function generateTestId(): string {
 }
 
 /**
- * Get test database connection
+ * Shared test database connection - created once and reused
  * CRITICAL: Always uses TEST_DATABASE_URL, never DATABASE_URL
  */
+let sharedTestClient: postgres.Sql | null = null;
+let sharedTestDb: ReturnType<typeof drizzle> | null = null;
+
 function getTestDatabase() {
-  const testDbUrl = getTestDatabaseUrl(); // Validates it's a test database
-  const client = postgres(testDbUrl);
-  return drizzle(client);
+  if (!sharedTestDb) {
+    const testDbUrl = getTestDatabaseUrl(); // Validates it's a test database
+    sharedTestClient = postgres(testDbUrl, { max: 10 }); // Pool with max 10 connections
+    sharedTestDb = drizzle(sharedTestClient);
+  }
+  return sharedTestDb;
+}
+
+/**
+ * Close the shared test database connection
+ * Called automatically by global teardown
+ */
+export async function closeTestDatabase(): Promise<void> {
+  if (sharedTestClient) {
+    await sharedTestClient.end();
+    sharedTestClient = null;
+    sharedTestDb = null;
+  }
 }
 
 /**
@@ -53,12 +71,7 @@ export async function cleanupTestData(testIdPrefix?: string): Promise<void> {
 
   // Delete projects matching test patterns
   // Cascade will handle related records (research runs, findings, etc.)
-  try {
-    await db.delete(projects).where(or(...conditions));
-  } catch (error) {
-    // Ignore errors during cleanup - database might be empty
-    console.warn("Warning during cleanup:", error);
-  }
+  await db.delete(projects).where(or(...conditions));
 }
 
 /**
