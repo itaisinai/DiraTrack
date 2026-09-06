@@ -35,6 +35,8 @@ function LiveResearchPage() {
   const [cancelling, setCancelling] = useState(false);
   const encodedSlug = encodeRouteSegment(slug);
   const endpoint = `/api/projects/${encodedSlug}/research-runs/${encodeURIComponent(runId)}`;
+  // Pass raw slug to ManualActionCard since it will encode internally
+  const rawSlug = slug;
 
   const fetchRun = useCallback(async () => {
     const response = await fetch(endpoint, { cache: "no-store" });
@@ -209,7 +211,7 @@ function LiveResearchPage() {
                     sourceCheckId={check.id}
                     sourceName={check.source.name}
                     manualAction={manualAction}
-                    projectSlug={encodedSlug}
+                    projectSlug={rawSlug}
                     runId={runId}
                     onActionComplete={() => void fetchRun().then(setDetails).catch(() => undefined)}
                   />
