@@ -33,8 +33,8 @@ test.describe("User Flow - Project Creation", () => {
     await expect(page).toHaveTitle(/DiraTrack/);
     await expect(page.getByRole("heading", { name: /הפרויקטים שלך/ })).toBeVisible();
 
-    // Verify new project link exists
-    const newProjectLink = page.getByRole("link", { name: /יצירת פרויקט/i });
+    // Verify new project link exists (use first() since there may be multiple)
+    const newProjectLink = page.getByRole("link", { name: /יצירת פרויקט/i }).first();
     await expect(newProjectLink).toBeVisible();
   });
 
@@ -115,14 +115,23 @@ test.describe("User Flow - Project Creation", () => {
     // Verify review step
     await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
 
-    // Create first project
+    // Create first project and wait for navigation to complete
     const createButton1 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
-    await createButton1.click();
+    await Promise.all([
+      page.waitForURL((url) =>
+        url.pathname.startsWith("/projects/") &&
+        url.pathname !== "/projects/new"
+      , { timeout: 10000 }),
+      createButton1.click(),
+    ]);
 
-    // Wait for navigation to first project page
-    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+    // Extract slug from URL
     const firstProjectUrl = page.url();
-    const firstSlug = firstProjectUrl.split("/projects/")[1];
+    const firstPathname = new URL(firstProjectUrl).pathname;
+    expect(firstPathname).not.toBe("/projects/new");
+    const firstSlug = firstPathname.split("/projects/")[1];
+    expect(firstSlug).toBeTruthy();
+    expect(firstSlug).not.toBe("new");
 
     // Verify first project loaded
     await expect(page.getByText(projectName).first()).toBeVisible();
@@ -149,19 +158,26 @@ test.describe("User Flow - Project Creation", () => {
     // Create second project - wait for review step
     await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible({ timeout: 5000 });
     const createButton2 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
-    await createButton2.click();
+    await Promise.all([
+      page.waitForURL((url) =>
+        url.pathname.startsWith("/projects/") &&
+        url.pathname !== "/projects/new"
+      , { timeout: 10000 }),
+      createButton2.click(),
+    ]);
 
-    // Wait for navigation to second project page
-    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+    // Extract slug from URL
     const secondProjectUrl = page.url();
-    const secondSlug = secondProjectUrl.split("/projects/")[1];
+    const secondPathname = new URL(secondProjectUrl).pathname;
+    expect(secondPathname).not.toBe("/projects/new");
+    const secondSlug = secondPathname.split("/projects/")[1];
+    expect(secondSlug).toBeTruthy();
+    expect(secondSlug).not.toBe("new");
 
     // Verify second project loaded
     await expect(page.getByText(projectName).first()).toBeVisible();
 
-    // Verify slugs are different
-    expect(firstSlug).toBeTruthy();
-    expect(secondSlug).toBeTruthy();
+    // Verify slugs are different from each other
     expect(firstSlug).not.toBe(secondSlug);
 
     // Verify both projects are accessible
@@ -200,14 +216,23 @@ test.describe("User Flow - Project Creation", () => {
     // Verify review step
     await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
 
-    // Create first project
+    // Create first project and wait for navigation to complete
     const createButton1 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
-    await createButton1.click();
+    await Promise.all([
+      page.waitForURL((url) =>
+        url.pathname.startsWith("/projects/") &&
+        url.pathname !== "/projects/new"
+      , { timeout: 10000 }),
+      createButton1.click(),
+    ]);
 
-    // Wait for navigation to first project page
-    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+    // Extract slug from URL
     const firstProjectUrl = page.url();
-    const firstSlug = firstProjectUrl.split("/projects/")[1];
+    const firstPathname = new URL(firstProjectUrl).pathname;
+    expect(firstPathname).not.toBe("/projects/new");
+    const firstSlug = firstPathname.split("/projects/")[1];
+    expect(firstSlug).toBeTruthy();
+    expect(firstSlug).not.toBe("new");
 
     // Verify first project loaded
     await expect(page.getByText(projectName).first()).toBeVisible();
@@ -234,19 +259,26 @@ test.describe("User Flow - Project Creation", () => {
     // Create second project - wait for review step
     await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible({ timeout: 5000 });
     const createButton2 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
-    await createButton2.click();
+    await Promise.all([
+      page.waitForURL((url) =>
+        url.pathname.startsWith("/projects/") &&
+        url.pathname !== "/projects/new"
+      , { timeout: 10000 }),
+      createButton2.click(),
+    ]);
 
-    // Wait for navigation to second project page
-    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+    // Extract slug from URL
     const secondProjectUrl = page.url();
-    const secondSlug = secondProjectUrl.split("/projects/")[1];
+    const secondPathname = new URL(secondProjectUrl).pathname;
+    expect(secondPathname).not.toBe("/projects/new");
+    const secondSlug = secondPathname.split("/projects/")[1];
+    expect(secondSlug).toBeTruthy();
+    expect(secondSlug).not.toBe("new");
 
     // Verify second project loaded
     await expect(page.getByText(projectName).first()).toBeVisible();
 
-    // Verify slugs are different
-    expect(firstSlug).toBeTruthy();
-    expect(secondSlug).toBeTruthy();
+    // Verify slugs are different from each other
     expect(firstSlug).not.toBe(secondSlug);
 
     // Verify both projects are accessible on mobile

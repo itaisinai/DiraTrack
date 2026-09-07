@@ -401,7 +401,7 @@ test.describe("API - Manual Action Resolution", () => {
     expect(data.check.dismissedReason).toBe("מקור לא רלוונטי לפרויקט זה");
   });
 
-  test("POST /api/projects/:slug/research-runs/:runId/source-checks/:checkId/retry retries failed check", async ({ request }) => {
+  test("POST /api/projects/:slug/research-runs/:runId/source-checks/:checkId/retry retries failed check @live", async ({ request }) => {
     const testId = generateTestId();
     const { project } = await createTestProject(request, { testId });
 
@@ -418,17 +418,17 @@ test.describe("API - Manual Action Resolution", () => {
     const runData = await runResponse.json();
     const check = runData.sourceChecks.find((c: any) => c.source.key === "asia-cyrus");
 
-    // If the check is not in failed state, we can't test retry
-    // This test might need to be tagged as @live or use specific mocking
-    if (check.status === "failed") {
-      const response = await request.post(
-        `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}/source-checks/${check.id}/retry`
-      );
+    // This test requires a failed check to test retry functionality
+    // With mocked APIs, checks succeed, so this test is @live only
+    expect(check.status).toBe("failed");
 
-      expect(response.status()).toBe(202);
-      const data = await response.json();
-      expect(data).toHaveProperty("check");
-    }
+    const response = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}/source-checks/${check.id}/retry`
+    );
+
+    expect(response.status()).toBe(202);
+    const data = await response.json();
+    expect(data).toHaveProperty("check");
   });
 });
 
