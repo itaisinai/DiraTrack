@@ -229,3 +229,64 @@ export const WINNING_MESSAGE = `שלום רב,
 
 מומלץ לעקוב אחר התקדמות הפרויקט באתר:
 https://www.dira.moch.gov.il/ProjectsList`;
+
+/**
+ * Force a source check to fail deterministically for testing retry functionality
+ * This directly updates the database state to simulate a failed check
+ */
+export async function forceSourceCheckToFail(
+  request: APIRequestContext,
+  projectSlug: string,
+  runId: string,
+  sourceKey: string
+): Promise<{ checkId: string; error: string }> {
+  // Import required database modules
+  const { sourceChecks } = await import("@diratrack/database");
+  const { eq } = await import("drizzle-orm");
+
+  // Use the shared test database connection
+  const db = getTestDatabase();
+
+  // Get the research run details to find the source check
+  const runResponse = await request.get(
+    `/api/projects/${encodeURIComponent(projectSlug)}/research-runs/${runId}`
+  );
+  expect(runResponse.status()).toBe(200);
+  const runData = await runResponse.json();
+
+  const check = runData.sourceChecks.find((c: any) => c.source.key === sourceKey);
+  expect(check).toBeTruthy();
+
+  // Verify the check exists in the database
+  const { sql } = await import("drizzle-orm");
+  const existing = await db.select().from(sourceChecks).where(eq(sourceChecks.id, check.id));
+  expect(existing.length).toBe(1);
+
+  // Directly update the source check to failed state, regardless of current state
+  // This simulates what failResearchJob does after the worker processed it
+  const testError = "Test-induced failure for retry test";
+  const now = new Date();
+
+  const result = await db
+    .update(sourceChecks)
+    .set({
+      status: "failed",
+      error: testError,
+      progress: 100,
+      resultCount: 0, // Clear results since it "failed"
+      completedAt: now,
+    })
+    .where(eq(sourceChecks.id, check.id))
+    .returning();
+
+  expect(result.length).toBe(1);
+  expect(result[0].status).toBe("failed");
+
+  // Small delay to ensure the update is visible across connections
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  return {
+    checkId: check.id,
+    error: testError,
+  };
+}

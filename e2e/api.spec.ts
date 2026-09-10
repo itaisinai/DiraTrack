@@ -6,6 +6,7 @@ import {
   startTestResearchRun,
   waitForResearchRunComplete,
   waitForSourceCheckStatus,
+  forceSourceCheckToFail,
 } from "./test-helpers";
 import { createMockServer } from "./mocks";
 
@@ -401,7 +402,7 @@ test.describe("API - Manual Action Resolution", () => {
     expect(data.check.dismissedReason).toBe("מקור לא רלוונטי לפרויקט זה");
   });
 
-  test("POST /api/projects/:slug/research-runs/:runId/source-checks/:checkId/retry retries failed check @live", async ({ request }) => {
+  test("POST /api/projects/:slug/research-runs/:runId/source-checks/:checkId/retry retries failed check", async ({ request }) => {
     const testId = generateTestId();
     const { project } = await createTestProject(request, { testId });
 
@@ -409,26 +410,52 @@ test.describe("API - Manual Action Resolution", () => {
       sourceKeys: ["asia-cyrus"],
     });
 
-    // Wait for research to complete
+    // Wait for research to complete first
     await waitForResearchRunComplete(request, project.currentSlug, researchRun.id);
 
-    const runResponse = await request.get(
+    // Now force the source check to fail deterministically
+    const { checkId, error: originalError } = await forceSourceCheckToFail(
+      request,
+      project.currentSlug,
+      researchRun.id,
+      "asia-cyrus"
+    );
+
+    // Verify the check is in failed state before retry
+    const preRetryResponse = await request.get(
       `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
     );
-    const runData = await runResponse.json();
-    const check = runData.sourceChecks.find((c: any) => c.source.key === "asia-cyrus");
+    expect(preRetryResponse.status()).toBe(200);
+    const preRetryData = await preRetryResponse.json();
+    const preRetryCheck = preRetryData.sourceChecks.find((c: any) => c.id === checkId);
+    expect(preRetryCheck.status).toBe("failed");
+    expect(preRetryCheck.error).toBe(originalError);
 
-    // This test requires a failed check to test retry functionality
-    // With mocked APIs, checks succeed, so this test is @live only
-    expect(check.status).toBe("failed");
-
-    const response = await request.post(
-      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}/source-checks/${check.id}/retry`
+    // Retry the failed check
+    const retryResponse = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}/source-checks/${checkId}/retry`
     );
 
-    expect(response.status()).toBe(202);
-    const data = await response.json();
-    expect(data).toHaveProperty("check");
+    // Verify retry API response
+    expect(retryResponse.status()).toBe(202);
+    const retryData = await retryResponse.json();
+    expect(retryData).toHaveProperty("check");
+    expect(retryData.check.id).toBe(checkId);
+
+    // Verify the check transitions from failed to pending/queued
+    const postRetryCheck = retryData.check;
+    expect(postRetryCheck.status).toBe("pending");
+    expect(postRetryCheck.error).toBeNull();
+
+    // Verify check belongs to the requested project and research run
+    const postRetryResponse = await request.get(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
+    );
+    const postRetryRunData = await postRetryResponse.json();
+    const finalCheck = postRetryRunData.sourceChecks.find((c: any) => c.id === checkId);
+    expect(finalCheck).toBeTruthy();
+    expect(finalCheck.status).toBe("pending");
+    expect(finalCheck.error).toBeNull();
   });
 });
 
