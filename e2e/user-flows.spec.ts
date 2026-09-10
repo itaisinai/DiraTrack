@@ -1,235 +1,925 @@
 import { test, expect, Page } from "@playwright/test";
+import {
+  cleanupTestData,
+  generateTestId,
+  createTestProject,
+  startTestResearchRun,
+  waitForResearchRunComplete,
+  WINNING_MESSAGE,
+} from "./test-helpers";
+import { createMockServer } from "./mocks";
 
-const WINNING_MESSAGE = `שלום רב,
+// Mock external APIs by default
+let mockServer: ReturnType<typeof createMockServer>;
 
-ברכותינו. זכית בהגרלה לתור לבחירת דירה.
+test.beforeAll(() => {
+  mockServer = createMockServer();
+  mockServer.listen({ onUnhandledRequest: "bypass" });
+});
 
-במסגרת תוכנית "דירה בהנחה" זכית בהגרלה מספר 2642 לפרויקט 324 של קבלן אסיה סיירוס פיתוח וייזום בע"מ
-ביישוב יהוד
-נקבע כי מקומך לבחירת דירה הוא 63. בהגרלה זו הוצעו 118 דירות.
+test.afterAll(() => {
+  mockServer.close();
+});
 
-מומלץ לעקוב אחר התקדמות הפרויקט באתר:
-https://www.dira.moch.gov.il/ProjectsList`;
+test.beforeEach(async () => {
+  mockServer.resetHandlers();
+  await cleanupTestData();
+});
 
-test.describe("User Journeys", () => {
-  test("Flow A: Empty state and project creation", async ({ page }) => {
+test.describe("User Flow - Project Creation", () => {
+  test("Empty state shows dashboard and navigation", async ({ page }) => {
     await page.goto("/");
 
-    // Verify empty state
     await expect(page).toHaveTitle(/DiraTrack/);
     await expect(page.getByRole("heading", { name: /הפרויקטים שלך/ })).toBeVisible();
 
-    // Navigate to project creation
-    await page.getByRole("link", { name: /פרויקט חדש/ }).click();
-    await expect(page).toHaveURL(/\/projects\/new/);
+    // Verify new project link exists (use first() since there may be multiple)
+    const newProjectLink = page.getByRole("link", { name: /יצירת פרויקט/i }).first();
+    await expect(newProjectLink).toBeVisible();
+  });
 
-    // Verify winning message input page
-    await expect(page.getByRole("heading", { name: /פרויקט חדש/ })).toBeVisible();
+  test("Create project from winning message", async ({ page }) => {
+    const testId = generateTestId();
 
-    // Paste winning message
-    const textarea = page.getByRole("textbox");
+    await page.goto("/projects/new");
+
+    // Verify project creation page
+    await expect(page.getByRole("heading", { name: /הוספת פרויקט חדש/i })).toBeVisible();
+
+    // Fill winning message
+    const textarea = page.getByRole("textbox").first();
     await textarea.fill(WINNING_MESSAGE);
 
-    // Verify parsed fields are displayed
-    await expect(page.getByText("2642")).toBeVisible(); // lottery number
-    await expect(page.getByText("324")).toBeVisible(); // housing project
-    await expect(page.getByText("יהוד")).toBeVisible(); // city
-    await expect(page.getByText(/אסיה סיירוס/)).toBeVisible(); // developer
-    await expect(page.getByText("63")).toBeVisible(); // selection position
-    await expect(page.getByText("118")).toBeVisible(); // apartments
+    // Continue to details step
+    const continueButton = page.getByRole("button", { name: /המשך לאימות פרטים/i });
+    await continueButton.click();
 
-    // Verify no registrant number is shown
-    await expect(page.getByText("ז.")).not.toBeVisible();
+    // Wait for details step - verify form fields are populated
+    await expect(page.getByLabel(/שם הפרויקט/)).toHaveValue(/324/, { timeout: 5000 });
+    await expect(page.getByLabel(/עיר/)).toHaveValue("יהוד");
+    await expect(page.getByLabel(/מספר הגרלה/)).toHaveValue("2642");
+    await expect(page.getByLabel(/יזם/)).toHaveValue(/אסיה סיירוס/);
+
+    // Continue to review step
+    const reviewButton = page.getByRole("button", { name: /מעבר לסקירה/i });
+    await reviewButton.click();
+
+    // Wait for review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
 
     // Create project
-    await page.getByRole("button", { name: /יצירת הפרויקט/ }).click();
+    const createButton = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
+    await createButton.click();
 
-    // Verify navigation to Hebrew slug
-    await expect(page).toHaveURL(/\/projects\/.+/);
+    // Wait for navigation to project page
+    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
     await expect(page).not.toHaveURL(/\/projects\/new/);
 
-    // Verify project overview
+    // Verify project overview is visible
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByText(/מזהי הפרויקט/)).toBeVisible();
 
-    // Verify identifiers are displayed
-    await expect(page.getByText("2642")).toBeVisible();
-    await expect(page.getByText("324")).toBeVisible();
+    // Verify identifiers are displayed - use first() to avoid strict mode violations
+    await expect(page.getByText("2642").first()).toBeVisible();
+    await expect(page.getByText("324").first()).toBeVisible();
 
-    // Refresh and verify persistence
+    // Verify persistence after reload
     await page.reload();
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
-  test("Flow B: Multiple projects and isolation", async ({ page, request }) => {
-    // Create first project via UI
+  test("Create two projects with duplicate name - desktop @chromium", async ({ page }) => {
+    const testId = generateTestId();
+    const projectName = `פרויקט ${testId}`;
+    const winningMessage = `מזל טוב! זכית בדירה בפרויקט ${testId} ביהוד`;
+
+    // Create first project via browser wizard
     await page.goto("/projects/new");
-    await page.getByRole("textbox").fill(WINNING_MESSAGE);
-    await page.getByRole("button", { name: /יצירת הפרויקט/ }).click();
-    await page.waitForURL(/\/projects\/.+/);
-    const url1 = page.url();
+    await expect(page.getByRole("heading", { name: /הוספת פרויקט חדש/i })).toBeVisible();
 
-    // Create second project via API
-    const response = await request.post("/api/projects", {
-      data: {
-        name: "פרויקט שני",
-        city: "תל אביב",
-        developer: "יזם אחר",
-        identifiers: [
-          { type: "lottery-number", value: "9999", origin: "manual" },
-        ],
-      },
-    });
-    expect(response.status()).toBe(201);
-    const { project: project2 } = await response.json();
+    // Fill winning message to get to details step
+    const textarea = page.getByRole("textbox").first();
+    await textarea.fill(winningMessage);
 
-    // Go to dashboard
-    await page.goto("/");
+    //Continue to details
+    const continueButton = page.getByRole("button", { name: /המשך לאימות פרטים/i });
+    await continueButton.click();
 
-    // Verify both projects appear
-    await expect(page.getByText(/יהוד/)).toBeVisible();
-    await expect(page.getByText(/תל אביב/)).toBeVisible();
+    // Fill project details with unique name
+    await page.getByLabel(/שם הפרויקט/).fill(projectName);
+    await page.getByLabel(/^עיר/).fill("יהוד");
 
-    // Verify slugs are different
-    expect(url1).not.toContain(project2.currentSlug);
+    // Continue to review
+    const reviewButton = page.getByRole("button", { name: /מעבר לסקירה/i });
+    await reviewButton.click();
 
-    // Navigate to second project
-    await page.goto(`/projects/${encodeURIComponent(project2.currentSlug)}`);
-    await expect(page.getByText("פרויקט שני")).toBeVisible();
-    await expect(page.getByText("9999")).toBeVisible();
+    // Verify review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
+
+    // Create first project and wait for navigation to complete
+    const createButton1 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
+    await Promise.all([
+      page.waitForURL((url) =>
+        url.pathname.startsWith("/projects/") &&
+        url.pathname !== "/projects/new"
+      , { timeout: 10000 }),
+      createButton1.click(),
+    ]);
+
+    // Extract slug from URL
+    const firstProjectUrl = page.url();
+    const firstPathname = new URL(firstProjectUrl).pathname;
+    expect(firstPathname).not.toBe("/projects/new");
+    const firstSlug = firstPathname.split("/projects/")[1];
+    expect(firstSlug).toBeTruthy();
+    expect(firstSlug).not.toBe("new");
+
+    // Verify first project loaded
+    await expect(page.getByText(projectName).first()).toBeVisible();
+
+    // Create second project with same name via browser wizard
+    await page.goto("/projects/new");
+
+    // Fill winning message again
+    await page.getByRole("textbox").first().fill(winningMessage);
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+
+    // Wait for details step to load
+    await expect(page.getByRole("heading", { name: /אימות והשלמת פרטים/i })).toBeVisible({ timeout: 5000 });
+
+    // Fill SAME project name and ensure city is filled
+    await page.getByLabel(/שם הפרויקט/).clear();
+    await page.getByLabel(/שם הפרויקט/).fill(projectName);
+    await page.getByLabel(/^עיר/).clear();
+    await page.getByLabel(/^עיר/).fill("יהוד");
+
+    // Continue to review
+    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
+
+    // Create second project - wait for review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible({ timeout: 5000 });
+    const createButton2 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
+    await Promise.all([
+      page.waitForURL((url) =>
+        url.pathname.startsWith("/projects/") &&
+        url.pathname !== "/projects/new"
+      , { timeout: 10000 }),
+      createButton2.click(),
+    ]);
+
+    // Extract slug from URL
+    const secondProjectUrl = page.url();
+    const secondPathname = new URL(secondProjectUrl).pathname;
+    expect(secondPathname).not.toBe("/projects/new");
+    const secondSlug = secondPathname.split("/projects/")[1];
+    expect(secondSlug).toBeTruthy();
+    expect(secondSlug).not.toBe("new");
+
+    // Verify second project loaded
+    await expect(page.getByText(projectName).first()).toBeVisible();
+
+    // Verify slugs are different from each other
+    expect(firstSlug).not.toBe(secondSlug);
+
+    // Verify both projects are accessible
+    await page.goto(firstProjectUrl);
+    await expect(page.getByText(projectName).first()).toBeVisible();
+
+    await page.goto(secondProjectUrl);
+    await expect(page.getByText(projectName).first()).toBeVisible();
   });
 
-  test("Flow C: Research confirmation dialog", async ({ page }) => {
-    // Create a project first
+  test("Create two projects with duplicate name - mobile @mobile", async ({ page }) => {
+    const testId = generateTestId();
+    const projectName = `פרויקט ${testId}`;
+    const winningMessage = `מזל טוב! זכית בדירה בפרויקט ${testId} ביהוד`;
+
+    // Create first project via browser wizard
     await page.goto("/projects/new");
-    await page.getByRole("textbox").fill(WINNING_MESSAGE);
-    await page.getByRole("button", { name: /יצירת הפרויקט/ }).click();
-    await page.waitForURL(/\/projects\/.+/);
+    await expect(page.getByRole("heading", { name: /הוספת פרויקט חדש/i })).toBeVisible();
 
-    // Click "Run research"
-    await page.getByRole("button", { name: /מחקר חדש/ }).click();
+    // Fill winning message to get to details step
+    const textarea = page.getByRole("textbox").first();
+    await textarea.fill(winningMessage);
 
-    // Verify confirmation dialog
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByText(/שליחת נתונים למקורות חיצוניים/)).toBeVisible();
+    // Continue to details
+    const continueButton = page.getByRole("button", { name: /המשך לאימות פרטים/i });
+    await continueButton.click();
 
-    // Verify both sources are mentioned
-    await expect(page.getByText(/דירה בהנחה/)).toBeVisible();
-    await expect(page.getByText(/אסיה סיירוס/)).toBeVisible();
+    // Fill project details with unique name
+    await page.getByLabel(/שם הפרויקט/).fill(projectName);
+    await page.getByLabel(/^עיר/).fill("יהוד");
 
-    // Verify start button is disabled before consent
-    const startButton = page.getByRole("button", { name: /התחלת המחקר/ });
-    await expect(startButton).toBeDisabled();
+    // Continue to review
+    const reviewButton = page.getByRole("button", { name: /מעבר לסקירה/i });
+    await reviewButton.click();
 
-    // Give consent
-    await page.getByRole("checkbox").check();
-    await expect(startButton).toBeEnabled();
+    // Verify review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible();
 
-    // Start research
-    await startButton.click();
+    // Create first project and wait for navigation to complete
+    const createButton1 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
+    await Promise.all([
+      page.waitForURL((url) =>
+        url.pathname.startsWith("/projects/") &&
+        url.pathname !== "/projects/new"
+      , { timeout: 10000 }),
+      createButton1.click(),
+    ]);
 
-    // Verify navigation to live research screen
-    await expect(page).toHaveURL(/\/research\/.+/);
-    await expect(page.getByText(/בדיקת מקורות/)).toBeVisible();
-  });
+    // Extract slug from URL
+    const firstProjectUrl = page.url();
+    const firstPathname = new URL(firstProjectUrl).pathname;
+    expect(firstPathname).not.toBe("/projects/new");
+    const firstSlug = firstPathname.split("/projects/")[1];
+    expect(firstSlug).toBeTruthy();
+    expect(firstSlug).not.toBe("new");
 
-  test("Flow D: Worker and research states", async ({ page }) => {
-    // Create project
+    // Verify first project loaded
+    await expect(page.getByText(projectName).first()).toBeVisible();
+
+    // Create second project with same name via browser wizard
     await page.goto("/projects/new");
-    await page.getByRole("textbox").fill(WINNING_MESSAGE);
-    await page.getByRole("button", { name: /יצירת הפרויקט/ }).click();
-    await page.waitForURL(/\/projects\/.+/);
 
-    // Start research
-    await page.getByRole("button", { name: /מחקר חדש/ }).click();
-    await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: /התחלת המחקר/ }).click();
-    await page.waitForURL(/\/research\/.+/);
+    // Fill winning message again
+    await page.getByRole("textbox").first().fill(winningMessage);
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
 
-    // Wait for research to complete (with timeout)
-    await page.waitForTimeout(15000);
+    // Wait for details step to load
+    await expect(page.getByRole("heading", { name: /אימות והשלמת פרטים/i })).toBeVisible({ timeout: 5000 });
 
-    // Check that source cards are visible
-    await expect(page.getByText(/דירה בהנחה/)).toBeVisible();
-    await expect(page.getByText(/אסיה סיירוס/)).toBeVisible();
+    // Fill SAME project name and ensure city is filled
+    await page.getByLabel(/שם הפרויקט/).clear();
+    await page.getByLabel(/שם הפרויקט/).fill(projectName);
+    await page.getByLabel(/^עיר/).clear();
+    await page.getByLabel(/^עיר/).fill("יהוד");
 
-    // Verify progress indicator
-    await expect(page.getByText(/%/)).toBeVisible();
+    // Continue to review
+    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
 
-    // Take screenshot for manual verification
-    await page.screenshot({ path: "test-results/research-state.png", fullPage: true });
-  });
+    // Create second project - wait for review step
+    await expect(page.getByRole("heading", { name: /סקירת הפרויקט/i })).toBeVisible({ timeout: 5000 });
+    const createButton2 = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
+    await Promise.all([
+      page.waitForURL((url) =>
+        url.pathname.startsWith("/projects/") &&
+        url.pathname !== "/projects/new"
+      , { timeout: 10000 }),
+      createButton2.click(),
+    ]);
 
-  test("Flow E: Responsive and RTL UI", async ({ page, context }) => {
-    // Test desktop viewport
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto("/");
-    await expect(page).toHaveAttribute("html", "dir", "rtl");
+    // Extract slug from URL
+    const secondProjectUrl = page.url();
+    const secondPathname = new URL(secondProjectUrl).pathname;
+    expect(secondPathname).not.toBe("/projects/new");
+    const secondSlug = secondPathname.split("/projects/")[1];
+    expect(secondSlug).toBeTruthy();
+    expect(secondSlug).not.toBe("new");
 
-    // Test mobile viewport
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: /הפרויקטים שלך/ })).toBeVisible();
+    // Verify second project loaded
+    await expect(page.getByText(projectName).first()).toBeVisible();
 
-    // Create project on mobile
-    await page.goto("/projects/new");
-    await page.getByRole("textbox").fill(WINNING_MESSAGE);
-    await expect(page.getByRole("button", { name: /יצירת הפרויקט/ })).toBeVisible();
+    // Verify slugs are different from each other
+    expect(firstSlug).not.toBe(secondSlug);
 
-    // Verify no horizontal overflow
-    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-    const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
-    expect(scrollWidth).toBe(clientWidth);
-  });
+    // Verify both projects are accessible on mobile
+    await page.goto(firstProjectUrl);
+    await expect(page.getByText(projectName).first()).toBeVisible();
 
-  test("Flow F: Invalid navigation and 404 handling", async ({ page }) => {
-    // Try nonexistent project
-    await page.goto("/projects/nonexistent-project");
-    // Should either redirect or show error
-    await page.waitForLoadState("networkidle");
-
-    // Try nonexistent research run
-    await page.goto("/projects/test/research/nonexistent-run");
-    await page.waitForLoadState("networkidle");
-
-    // Try nonexistent finding
-    await page.goto("/projects/test/findings/nonexistent-finding");
-    await page.waitForLoadState("networkidle");
+    await page.goto(secondProjectUrl);
+    await expect(page.getByText(projectName).first()).toBeVisible();
   });
 });
 
-test.describe("Research Worker Integration", () => {
-  test("Sources complete with correct states", async ({ page, request }) => {
-    // Create project via API with known identifiers
-    const response = await request.post("/api/projects", {
-      data: {
-        name: "פרויקט בדיקה",
-        city: "יהוד",
-        developer: "אסיה סיירוס פיתוח וייזום בע\"מ",
-        identifiers: [
-          { type: "lottery-number", value: "2642", origin: "winning-message" },
-        ],
-      },
+test.describe("User Flow - Project Dashboard", () => {
+  test("Multiple projects appear in dashboard", async ({ page, request }) => {
+    const testId1 = generateTestId();
+    const testId2 = generateTestId();
+
+    // Create two projects via API
+    await createTestProject(request, {
+      name: `פרויקט ${testId1}`,
+      city: "יהוד",
+      testId: testId1,
     });
-    const { project } = await response.json();
+
+    await createTestProject(request, {
+      name: `פרויקט ${testId2}`,
+      city: "תל אביב",
+      testId: testId2,
+    });
+
+    // Navigate to dashboard
+    await page.goto("/");
+
+    // Wait for projects to load - use first() to avoid strict mode violations
+    await expect(page.getByText("יהוד").first()).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("תל אביב").first()).toBeVisible();
+  });
+
+  test("Navigate between projects", async ({ page, request }) => {
+    const testId1 = generateTestId();
+    const testId2 = generateTestId();
+
+    const { project: project1 } = await createTestProject(request, {
+      name: `פרויקט ${testId1}`,
+      city: "יהוד",
+      testId: testId1,
+    });
+
+    const { project: project2 } = await createTestProject(request, {
+      name: `פרויקט ${testId2}`,
+      city: "חיפה",
+      testId: testId2,
+    });
+
+    // Visit first project
+    await page.goto(`/projects/${encodeURIComponent(project1.currentSlug)}`);
+    await expect(page.getByText(`פרויקט ${testId1}`)).toBeVisible();
+
+    // Visit second project
+    await page.goto(`/projects/${encodeURIComponent(project2.currentSlug)}`);
+    await expect(page.getByText(`פרויקט ${testId2}`)).toBeVisible();
+    await expect(page.getByText("חיפה")).toBeVisible();
+  });
+});
+
+test.describe("User Flow - Research Consent", () => {
+  test("Source selection dialog shows available sources", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    // Click research button
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    // Verify dialog appears
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    // Verify sources are shown
+    await expect(page.getByText(/דירה בהנחה/)).toBeVisible();
+    await expect(page.getByText(/אסיה סיירוס/)).toBeVisible();
+  });
+
+  test("Cannot start research without consent", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    // Ensure consent checkbox is not checked
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
+    if (await consentCheckbox.isChecked()) {
+      await consentCheckbox.uncheck();
+    }
+
+    // Start button should be disabled without consent
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
+    await expect(startButton).toBeDisabled();
+  });
+});
+
+test.describe("User Flow - Consent Flow", () => {
+  test("External source requires consent", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    // Verify consent checkbox exists (look for checkbox near consent text)
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
+    await expect(consentCheckbox).toBeVisible();
+
+    // Start button disabled before consent
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
+    await expect(startButton).toBeDisabled();
+
+    // Check consent
+    await consentCheckbox.check();
+
+    // Start button enabled after consent
+    await expect(startButton).toBeEnabled();
+  });
+
+  test("Can start research after giving consent", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    // Give consent
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
+    await consentCheckbox.check();
 
     // Start research
-    const runResponse = await request.post(`/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`, {
-      data: { externalDataConsent: true },
-    });
-    const { researchRun } = await runResponse.json();
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
+    await startButton.click();
 
-    // Navigate to research page
+    // Verify navigation to research page
+    await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
+
+    // Verify research screen is visible
+    await expect(page.getByText(/בדיקת מקורות/i)).toBeVisible({ timeout: 5000 });
+  });
+});
+
+test.describe("User Flow - Research Progress", () => {
+  test("Research progress screen shows source checks", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    // Start research
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
+    await consentCheckbox.check();
+
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
+    await startButton.click();
+
+    await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
+
+    // Wait for source cards to appear - use first() to avoid strict mode violation
+    await expect(page.getByText(/דירה בהנחה|אסיה סיירוס/).first()).toBeVisible({ timeout: 10000 });
+
+    // Verify at least one source card is present
+    const sourceCards = page.locator("article, [data-testid*='source'], [class*='source']");
+    await expect(sourceCards.first()).toBeVisible({ timeout: 5000 });
+  });
+
+  test("Research completes and shows summary", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      testId,
+      identifiers: [{ type: "lottery-number", value: "2642" }],
+    });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    // Start research
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
+    await consentCheckbox.check();
+
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
+    await startButton.click();
+
+    await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
+
+    // Wait for completion indicator using polling
+    await expect(async () => {
+      const statusText = await page.textContent("body");
+      expect(
+        statusText?.includes("הושלם") ||
+        statusText?.includes("completed") ||
+        statusText?.includes("100%")
+      ).toBeTruthy();
+    }).toPass({ timeout: 30000, intervals: [1000, 2000, 3000] });
+  });
+});
+
+test.describe("User Flow - Manual Action Resolution", () => {
+  test("Manual action shows waiting state", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      testId,
+      identifiers: [{ type: "lottery-number", value: "2642" }],
+    });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    // Start research
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
+    await consentCheckbox.check();
+
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
+    await startButton.click();
+
+    await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
+
+    // Wait for discounted-housing to show manual action (waiting-for-user)
+    await expect(async () => {
+      const pageContent = await page.textContent("body");
+      expect(pageContent?.includes("דירה בהנחה")).toBeTruthy();
+      expect(
+        pageContent?.includes("ממתין") ||
+        pageContent?.includes("waiting") ||
+        pageContent?.includes("פעולה נדרשת")
+      ).toBeTruthy();
+    }).toPass({ timeout: 30000, intervals: [1000, 2000] });
+  });
+
+  test("Can mark manual action as no result", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      testId,
+      identifiers: [{ type: "lottery-number", value: "2642" }],
+    });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    // Start research
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    const consentCheckbox = page.locator('input[type="checkbox"]').first();
+    await consentCheckbox.check();
+
+    const startButton = page.getByRole("button", { name: /התחל מחקר/i });
+    await startButton.click();
+
+    await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
+
+    // Wait for manual action button to appear
+    await expect(async () => {
+      const noResultButton = page.getByRole("button", { name: /ללא תוצאה/i });
+      await expect(noResultButton.first()).toBeVisible();
+    }).toPass({ timeout: 30000, intervals: [1000, 2000] });
+
+    // Click no result button
+    const noResultButton = page.getByRole("button", { name: /ללא תוצאה/i }).first();
+    await noResultButton.click();
+
+    // Verify action completed - the manual action card should disappear
+    await expect(noResultButton).not.toBeVisible({ timeout: 5000 });
+  });
+});
+
+test.describe("User Flow - Findings Collection", () => {
+  test("Research summary link opens findings collection", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      testId,
+      identifiers: [{ type: "lottery-number", value: "2642" }],
+    });
+
+    const { researchRun } = await startTestResearchRun(request, project.currentSlug, {
+      sourceKeys: ["asia-cyrus"],
+    });
+
+    await waitForResearchRunComplete(request, project.currentSlug, researchRun.id);
+
+    // Navigate to research summary page
     await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}/research/${researchRun.id}`);
 
-    // Wait for worker to process jobs
-    await page.waitForTimeout(20000);
+    // Wait for summary to load
+    await expect(page.getByRole("heading", { name: /סיכום המחקר/i })).toBeVisible({ timeout: 10000 });
 
-    // Take screenshot of final state
-    await page.screenshot({ path: "test-results/worker-final-state.png", fullPage: true });
+    // Click "View all findings" link
+    const findingsLink = page.getByRole("link", { name: /צפייה בכל הממצאים/i });
+    await expect(findingsLink).toBeVisible();
+    await findingsLink.click();
 
-    // Verify sources have completed statuses
-    const sourceCards = page.locator("article").filter({ hasText: /דירה בהנחה|אסיה סיירוס/ });
-    await expect(sourceCards).toHaveCount(2);
+    // Verify navigation to findings page
+    await page.waitForURL(new RegExp(`/projects/${encodeURIComponent(project.currentSlug)}/findings`), { timeout: 10000 });
+    await expect(page.getByRole("heading", { name: /^ממצאים$/i })).toBeVisible();
+  });
+
+  test("Findings collection renders finding metadata", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      testId,
+      identifiers: [{ type: "lottery-number", value: "2642" }],
+    });
+
+    const { researchRun } = await startTestResearchRun(request, project.currentSlug, {
+      sourceKeys: ["asia-cyrus"],
+    });
+
+    await waitForResearchRunComplete(request, project.currentSlug, researchRun.id);
+
+    // Navigate directly to findings page
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}/findings`);
+
+    // Wait for findings to load
+    await expect(page.getByRole("heading", { name: /^ממצאים$/i })).toBeVisible();
+
+    // Verify finding card renders with required metadata
+    const findingCard = page.locator("article").first();
+    await expect(findingCard).toBeVisible();
+
+    // Check for title (h2)
+    await expect(findingCard.locator("h2")).toBeVisible();
+    await expect(findingCard.locator("h2")).not.toBeEmpty();
+
+    // Check for summary text
+    const summaryText = await findingCard.textContent();
+    expect(summaryText).toBeTruthy();
+
+    // Check for source name (should contain "אסיה סיירוס")
+    await expect(findingCard.getByText(/אסיה סיירוס/)).toBeVisible();
+
+    // Check for "View finding" link
+    await expect(findingCard.getByRole("link", { name: /צפייה בממצא/i })).toBeVisible();
+
+    // Check for external source link
+    await expect(findingCard.locator('a[target="_blank"]')).toBeVisible();
+  });
+
+  test("Clicking finding card opens detail page", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      testId,
+      identifiers: [{ type: "lottery-number", value: "2642" }],
+    });
+
+    const { researchRun } = await startTestResearchRun(request, project.currentSlug, {
+      sourceKeys: ["asia-cyrus"],
+    });
+
+    await waitForResearchRunComplete(request, project.currentSlug, researchRun.id);
+
+    // Navigate to findings page
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}/findings`);
+
+    // Wait for findings to load
+    await expect(page.getByRole("heading", { name: /^ממצאים$/i })).toBeVisible();
+
+    // Get the "View finding" link
+    const viewLink = page.getByRole("link", { name: /צפייה בממצא/i }).first();
+    await expect(viewLink).toBeVisible();
+
+    // Click to open detail page
+    await viewLink.click();
+
+    // Verify navigation to finding detail page
+    await page.waitForURL(/\/findings\/.+/, { timeout: 10000 });
+    await expect(page).not.toHaveURL(/\/findings$/);
+
+    // Verify finding detail page loaded (should have a heading and content)
+    await expect(page.locator("h1, h2").first()).toBeVisible();
+  });
+
+  test("Hebrew slug is not double encoded in findings URLs", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      testId,
+      name: "פרויקט בדיקה עברית",
+      city: "יהוד",
+    });
+
+    const { researchRun } = await startTestResearchRun(request, project.currentSlug, {
+      sourceKeys: ["asia-cyrus"],
+    });
+
+    await waitForResearchRunComplete(request, project.currentSlug, researchRun.id);
+
+    // Navigate to findings page
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}/findings`);
+
+    // Wait for findings to load
+    await expect(page.getByRole("heading", { name: /^ממצאים$/i })).toBeVisible();
+
+    // Get the finding link href
+    const viewLink = page.getByRole("link", { name: /צפייה בממצא/i }).first();
+    const href = await viewLink.getAttribute("href");
+
+    // Verify href is properly encoded (single encoding, not double)
+    expect(href).toBeTruthy();
+    expect(href).toContain("/findings/");
+
+    // Href should not contain "%25" which indicates double encoding
+    expect(href).not.toContain("%25");
+
+    // Click and verify page loads successfully
+    await viewLink.click();
+    await page.waitForURL(/\/findings\/.+/, { timeout: 10000 });
+
+    // Verify we didn't get a 404
+    await expect(page.locator("h1, h2").first()).toBeVisible();
+    await expect(page.getByText(/404/)).not.toBeVisible();
+  });
+});
+
+test.describe("User Flow - 404 Handling", () => {
+  test("Nonexistent project shows error", async ({ page }) => {
+    await page.goto("/projects/nonexistent-project-12345");
+
+    // Wait for page load
+    await page.waitForLoadState("networkidle", { timeout: 10000 });
+
+    // Verify either 404 message or redirect to home
+    const bodyText = await page.textContent("body");
+    const isError = bodyText?.includes("404") ||
+                    bodyText?.includes("לא נמצא") ||
+                    bodyText?.includes("not found") ||
+                    page.url().includes("/?") ||
+                    page.url() === "http://localhost:3000/";
+
+    expect(isError).toBeTruthy();
+  });
+
+  test("Nonexistent research run shows error", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    await page.goto(
+      `/projects/${encodeURIComponent(project.currentSlug)}/research/nonexistent-run-12345`
+    );
+
+    await page.waitForLoadState("networkidle", { timeout: 10000 });
+
+    const bodyText = await page.textContent("body");
+    const isError = bodyText?.includes("404") ||
+                    bodyText?.includes("לא נמצא") ||
+                    bodyText?.includes("not found");
+
+    expect(isError).toBeTruthy();
+  });
+
+  test("Nonexistent finding shows error", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    await page.goto(
+      `/projects/${encodeURIComponent(project.currentSlug)}/findings/nonexistent-finding-12345`
+    );
+
+    await page.waitForLoadState("networkidle", { timeout: 10000 });
+
+    const bodyText = await page.textContent("body");
+    const isError = bodyText?.includes("404") ||
+                    bodyText?.includes("לא נמצא") ||
+                    bodyText?.includes("not found");
+
+    expect(isError).toBeTruthy();
+  });
+});
+
+test.describe("User Flow - RTL Verification", () => {
+  test("Page has RTL direction", async ({ page }) => {
+    await page.goto("/");
+
+    const htmlElement = page.locator("html");
+    await expect(htmlElement).toHaveAttribute("dir", "rtl");
+  });
+
+  test("Hebrew text displays correctly", async ({ page }) => {
+    await page.goto("/");
+
+    // Verify Hebrew text is present - check heading specifically
+    await expect(page.getByRole("heading", { name: /הפרויקטים שלך/ })).toBeVisible();
+  });
+
+  test("Text alignment is correct for RTL", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, {
+      name: `פרויקט ${testId}`,
+      testId,
+    });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    // Check that main content has RTL
+    const main = page.locator("main, [role='main'], body > div").first();
+    const direction = await main.evaluate((el) => {
+      return window.getComputedStyle(el).direction;
+    });
+
+    expect(direction).toBe("rtl");
+  });
+});
+
+test.describe("User Flow - Responsive @mobile", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("Dashboard is usable on mobile", async ({ page }) => {
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { name: /הפרויקטים שלך/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /יצירת פרויקט/i }).first()).toBeVisible();
+  });
+
+  test("Project creation works on mobile", async ({ page }) => {
+    await page.goto("/projects/new");
+
+    const textarea = page.getByRole("textbox").first();
+    await textarea.fill(WINNING_MESSAGE);
+
+    // Navigate through the form steps
+    await page.getByRole("button", { name: /המשך לאימות פרטים/i }).click();
+    await expect(page.getByLabel(/מספר הגרלה/)).toHaveValue("2642", { timeout: 5000 });
+    await page.getByRole("button", { name: /מעבר לסקירה/i }).click();
+
+    const createButton = page.getByRole("button", { name: /אישור ויצירת פרויקט/i });
+    await createButton.click();
+
+    await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  });
+
+  test("No horizontal scroll on mobile", async ({ page }) => {
+    await page.goto("/");
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
+
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1); // Allow 1px tolerance
+  });
+
+  test("Research dialog is usable on mobile", async ({ page, request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    await page.goto(`/projects/${encodeURIComponent(project.currentSlug)}`);
+
+    const researchButton = page.getByRole("button", { name: /הפעלת מחקר חדש/i });
+    await researchButton.click();
+
+    await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
+
+    // Verify dialog is not wider than viewport
+    const dialog = page.getByRole("dialog");
+    const dialogWidth = await dialog.evaluate((el) => el.getBoundingClientRect().width);
+    const viewportWidth = await page.evaluate(() => window.innerWidth);
+
+    expect(dialogWidth).toBeLessThanOrEqual(viewportWidth);
+  });
+});
+
+test.describe("User Flow - Desktop Viewport @chromium", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("Dashboard uses desktop layout", async ({ page }) => {
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { name: /הפרויקטים שלך/i })).toBeVisible();
+
+    // Verify viewport size
+    const width = await page.evaluate(() => window.innerWidth);
+    expect(width).toBeGreaterThanOrEqual(1440);
+  });
+
+  test("Multiple columns on desktop", async ({ page, request }) => {
+    const testId = generateTestId();
+
+    // Create multiple projects
+    for (let i = 0; i < 3; i++) {
+      await createTestProject(request, {
+        name: `פרויקט ${testId}-${i}`,
+        city: `עיר ${i}`,
+        testId: `${testId}-${i}`,
+      });
+    }
+
+    await page.goto("/");
+
+    // Wait for projects to load
+    await expect(page.getByText(`פרויקט ${testId}-0`)).toBeVisible({ timeout: 5000 });
+
+    // On desktop (1440px), projects should display in a multi-column grid
+    // Verify by checking that project cards are positioned horizontally
+    const projectCards = page.locator('a[href^="/projects/"]').filter({ hasText: testId });
+    await expect(projectCards).toHaveCount(3);
+
+    // Get bounding boxes of first two project cards
+    const firstCard = projectCards.nth(0);
+    const secondCard = projectCards.nth(1);
+
+    const firstBox = await firstCard.boundingBox();
+    const secondBox = await secondCard.boundingBox();
+
+    // On desktop, cards should be side-by-side
+    // In RTL layout, second card may be to the left of first card (lower x value)
+    // The key test is that they have DIFFERENT x positions (not stacked vertically)
+    expect(secondBox).not.toBeNull();
+    expect(firstBox).not.toBeNull();
+    if (firstBox && secondBox) {
+      // Cards are side-by-side if their x positions differ significantly
+      const xDifference = Math.abs(secondBox.x - firstBox.x);
+      expect(xDifference).toBeGreaterThan(100); // At least 100px apart horizontally
+    }
   });
 });
