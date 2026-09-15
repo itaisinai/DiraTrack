@@ -435,7 +435,7 @@ test.describe("User Flow - Consent Flow", () => {
     await page.waitForURL(/\/research\/.+/, { timeout: 10000 });
 
     // Verify research screen is visible
-    await expect(page.getByText(/בדיקת מקורות/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("heading", { name: /בדיקת מקורות/i })).toBeVisible({ timeout: 5000 });
   });
 });
 
