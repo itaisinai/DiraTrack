@@ -258,7 +258,6 @@ export async function forceSourceCheckToFail(
   expect(check).toBeTruthy();
 
   // Verify the check exists in the database
-  const { sql } = await import("drizzle-orm");
   const existing = await db.select().from(sourceChecks).where(eq(sourceChecks.id, check.id));
   expect(existing.length).toBe(1);
 

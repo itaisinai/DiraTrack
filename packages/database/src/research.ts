@@ -161,6 +161,25 @@ export async function cancelResearchRun(db: Database, projectId: string, researc
   });
 }
 
+/**
+ * Claims the next available research job for processing by a worker.
+ *
+ * **Attempt Semantics:**
+ * - `researchJobs.attempts` represents the cumulative number of times the job has been claimed by a worker.
+ * - When a job is first created, `attempts = 0`.
+ * - When claimed for execution, `attempts` is incremented to reflect the new execution attempt.
+ * - A retry job inherits the previous attempt count and increments when claimed.
+ * - Example flow:
+ *   - Initial job created: attempts = 0
+ *   - Worker claims job: attempts = 1 (first execution)
+ *   - Job fails, retry created: attempts = 1 (inherited, not yet executed)
+ *   - Worker claims retry: attempts = 2 (second execution)
+ *
+ * @param db Database instance
+ * @param workerId Unique identifier for the claiming worker
+ * @param leaseTimeoutMs Duration in milliseconds after which a running job is considered stale
+ * @returns The claimed job or null if no jobs are available
+ */
 export async function claimNextResearchJob(db: Database, workerId: string, leaseTimeoutMs = 5 * 60_000) {
   if (!Number.isFinite(leaseTimeoutMs) || leaseTimeoutMs <= 0) throw new Error("leaseTimeoutMs must be positive");
   const staleBefore = new Date(Date.now() - leaseTimeoutMs);
@@ -660,6 +679,25 @@ export async function dismissManualAction(
   });
 }
 
+/**
+ * Retries a failed source check by creating a new pending job.
+ *
+ * **Attempt Semantics:**
+ * - The retry job inherits the previous job's attempt count.
+ * - The count is NOT incremented here; it will be incremented when claimNextResearchJob claims it.
+ * - This ensures `attempts` accurately reflects the number of actual executions.
+ * - Example flow:
+ *   - Failed job has attempts = 1 (one execution occurred)
+ *   - Retry creates new job with attempts = 1 (inherited, execution hasn't happened yet)
+ *   - Worker claims retry: attempts = 2 (second execution begins)
+ *
+ * @param db Database instance
+ * @param projectId Project identifier
+ * @param runId Research run identifier
+ * @param sourceCheckId Source check identifier to retry
+ * @param userId Optional user identifier for audit trail
+ * @returns The updated source check in pending state
+ */
 export async function retryFailedSource(
   db: Database,
   projectId: string,
@@ -699,7 +737,7 @@ export async function retryFailedSource(
 
     if (!source) throw new Error("Source not found");
 
-    // Get current attempt count
+    // Get current attempt count from the last job
     const [lastJob] = await transaction
       .select({ attempts: researchJobs.attempts })
       .from(researchJobs)
@@ -712,7 +750,8 @@ export async function retryFailedSource(
       .orderBy(sql`${researchJobs.createdAt} desc`)
       .limit(1);
 
-    const nextAttempt = (lastJob?.attempts ?? 0) + 1;
+    // Inherit the attempt count; it will be incremented when the job is claimed
+    const inheritedAttempts = lastJob?.attempts ?? 0;
 
     // Reset sourceCheck to pending state
     const [updatedCheck] = await transaction
@@ -727,7 +766,7 @@ export async function retryFailedSource(
       .where(eq(sourceChecks.id, sourceCheckId))
       .returning();
 
-    // Create new research job in pending status
+    // Create new research job in pending status with inherited attempt count
     await transaction.insert(researchJobs).values({
       projectId,
       researchRunId: runId,
@@ -735,17 +774,17 @@ export async function retryFailedSource(
       status: "pending",
       progress: 0,
       payload: { sourceKey: source.key },
-      attempts: nextAttempt,
+      attempts: inheritedAttempts,
     });
 
-    // Create audit event
+    // Create audit event - record that this is retry attempt (inheritedAttempts + 1)
     await transaction.insert(auditEvents).values({
       projectId,
       actor: userId ? "user" : "system",
       action: "retry-failed-source",
       entityType: "source-check",
       entityId: sourceCheckId,
-      metadata: { runId, userId, attempt: nextAttempt },
+      metadata: { runId, userId, retryAttemptNumber: inheritedAttempts + 1 },
     });
 
     // Recalculate run state if run was terminal (reopen it)
