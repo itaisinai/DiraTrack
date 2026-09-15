@@ -13,7 +13,7 @@ function ProjectsPage() {
   useEffect(() => { fetch("/api/projects").then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<{ projects: ProjectSummary[] }>; }).then((result) => setProjects(result.projects)).catch(() => setError(true)); }, []);
 
   return <AppShell>
-    <header className="mb-10 flex flex-wrap items-center justify-between gap-4"><div><p className="mb-2 text-sm font-medium text-[var(--primary)]">לוח פרויקטים</p><h1 className="text-3xl font-bold">הפרויקטים שלי</h1><p className="mt-2 text-[var(--muted)]">כל המידע, המקורות והשינויים במקום אחד.</p></div><Link href="/projects/new" className="rounded-lg bg-[var(--primary)] px-5 py-3 font-semibold text-white hover:bg-blue-700">יצירת פרויקט</Link></header>
+    <header className="mb-10 flex flex-wrap items-center justify-between gap-4"><div><p className="mb-2 text-sm font-medium text-[var(--primary)]">לוח פרויקטים</p><h1 className="text-3xl font-bold">הפרויקטים שלך</h1><p className="mt-2 text-[var(--muted)]">כל המידע, המקורות והשינויים במקום אחד.</p></div><Link href="/projects/new" className="rounded-lg bg-[var(--primary)] px-5 py-3 font-semibold text-white hover:bg-blue-700">יצירת פרויקט</Link></header>
     {error && <StateCard title="מסד הנתונים אינו זמין" body="לא הצלחנו לטעון את הפרויקטים." action="ניסיון חוזר" onAction={() => location.reload()} />}
     {!error && projects === null && <div className="rounded-xl border border-[var(--border)] bg-white p-8 text-[var(--muted)]">טוען פרויקטים…</div>}
     {!error && projects?.length === 0 && <StateCard title="עדיין אין פרויקטים" body="ניצור פרויקט ראשון ונוסיף רק מידע שתאשר." action="יצירת פרויקט" href="/projects/new" />}

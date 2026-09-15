@@ -40,47 +40,108 @@ export async function ensureLocalUser(db: Database, displayName = "משתמש מ
 }
 
 export async function createProject(db: Database, ownerId: string, input: CreateProjectInput) {
-  const currentSlug = toProjectSlug(input.slug ?? input.name);
+  const baseSlug = toProjectSlug(input.slug ?? input.name);
+  const maxAttempts = 10;
 
-  return db.transaction(async (transaction) => {
-    const [project] = await transaction
-      .insert(projects)
-      .values({
-        ownerId,
-        name: input.name.trim(),
-        city: input.city.trim(),
-        developer: input.developer?.trim() || null,
-        currentSlug,
-      })
-      .returning();
-    if (!project) throw new Error("Failed to create project");
+  for (let globalAttempt = 0; globalAttempt < maxAttempts; globalAttempt++) {
+    try {
+      return await db.transaction(async (transaction) => {
+        // Find a unique slug by checking existing slugs within the transaction
+        let currentSlug = baseSlug;
+        let attempt = 0;
 
-    await transaction.insert(projectSlugs).values({ projectId: project.id, slug: currentSlug, isCurrent: true });
+        while (attempt < maxAttempts) {
+          // Check if this slug exists
+          const [existing] = await transaction
+            .select({ slug: projects.currentSlug })
+            .from(projects)
+            .where(eq(projects.currentSlug, currentSlug))
+            .limit(1);
 
-    const identifiers = (input.identifiers ?? []).filter((identifier) => identifier.value.trim());
-    if (identifiers.length) {
-      await transaction.insert(projectIdentifiers).values(
-        identifiers.map((identifier) => ({
+          if (!existing) {
+            // Slug is available, break and use it
+            break;
+          }
+
+          // Slug collision - generate a new one with a suffix
+          currentSlug = `${baseSlug}-${generateSlugSuffix()}`;
+          attempt++;
+        }
+
+        if (attempt >= maxAttempts) {
+          throw new Error("Failed to generate unique slug after multiple attempts");
+        }
+
+        const [project] = await transaction
+          .insert(projects)
+          .values({
+            ownerId,
+            name: input.name.trim(),
+            city: input.city.trim(),
+            developer: input.developer?.trim() || null,
+            currentSlug,
+          })
+          .returning();
+        if (!project) throw new Error("Failed to create project");
+
+        await transaction.insert(projectSlugs).values({ projectId: project.id, slug: currentSlug, isCurrent: true });
+
+        const identifiers = (input.identifiers ?? []).filter((identifier) => identifier.value.trim());
+        if (identifiers.length) {
+          await transaction.insert(projectIdentifiers).values(
+            identifiers.map((identifier) => ({
+              projectId: project.id,
+              type: identifier.type,
+              value: identifier.value.trim(),
+              origin: identifier.origin,
+              sourceUrl: identifier.sourceUrl,
+            })),
+          );
+        }
+
+        await transaction.insert(auditEvents).values({
           projectId: project.id,
-          type: identifier.type,
-          value: identifier.value.trim(),
-          origin: identifier.origin,
-          sourceUrl: identifier.sourceUrl,
-        })),
+          actor: "user",
+          action: "project.created",
+          entityType: "project",
+          entityId: project.id,
+          after: { name: project.name, city: project.city, developer: project.developer, slug: project.currentSlug },
+        });
+
+        return project;
+      });
+    } catch (error) {
+      // Retry the entire transaction on slug collision
+      const pgError = error && typeof error === "object" && "cause" in error ? error.cause : error;
+      const isSlugCollision = Boolean(
+        pgError &&
+          typeof pgError === "object" &&
+          "code" in pgError &&
+          pgError.code === "23505" &&
+          "constraint" in pgError &&
+          typeof pgError.constraint === "string" &&
+          (pgError.constraint.includes("slug") || pgError.constraint.includes("current_slug")),
       );
+
+      if (!isSlugCollision || globalAttempt === maxAttempts - 1) {
+        throw error;
+      }
+      // Retry the entire transaction with a new random suffix
     }
+  }
 
-    await transaction.insert(auditEvents).values({
-      projectId: project.id,
-      actor: "user",
-      action: "project.created",
-      entityType: "project",
-      entityId: project.id,
-      after: { name: project.name, city: project.city, developer: project.developer, slug: project.currentSlug },
-    });
+  throw new Error("Failed to generate unique slug after multiple attempts");
+}
 
-    return project;
-  });
+function generateSlugSuffix(): string {
+  // Use crypto.getRandomValues for better randomness than Math.random()
+  // Generate a 4-character alphanumeric suffix
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const array = new Uint8Array(4);
+  crypto.getRandomValues(array);
+  return Array.from(array)
+    .map((byte) => chars[byte % chars.length])
+    .join("");
 }
 
 export async function listProjects(db: Database, ownerId: string) {

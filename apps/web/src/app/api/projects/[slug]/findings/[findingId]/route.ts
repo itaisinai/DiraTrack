@@ -4,9 +4,22 @@ import { NextResponse } from "next/server";
 type Context = { params: Promise<{ slug: string; findingId: string }> };
 
 export async function GET(_request: Request, context: Context) {
-  const resolved = await resolveProjectFinding(context);
-  if (!resolved) return NextResponse.json({ error: "Finding not found" }, { status: 404 });
-  return NextResponse.json({ finding: resolved.finding });
+  try {
+    const resolved = await resolveProjectFinding(context);
+    if (!resolved) return NextResponse.json({ error: "Finding not found" }, { status: 404 });
+    return NextResponse.json({ finding: resolved.finding });
+  } catch (error) {
+    // Handle database errors (e.g., invalid UUID format)
+    // Drizzle may wrap the Postgres error in a cause property
+    const pgError = error && typeof error === "object" && "cause" in error ? error.cause : error;
+    if (pgError && typeof pgError === "object" && "code" in pgError) {
+      // PostgreSQL error codes: 22P02 = invalid text representation
+      if (pgError.code === "22P02") {
+        return NextResponse.json({ error: "Finding not found" }, { status: 404 });
+      }
+    }
+    throw error;
+  }
 }
 
 export async function PATCH(request: Request, context: Context) {

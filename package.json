@@ -2,6 +2,7 @@
   "name": "diratrack",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -12,15 +13,19 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:integration": "bash scripts/test-integration.sh",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",
-    "test:e2e:live": "LIVE_API_TESTS=1 playwright test --grep @live",
+    "test:e2e:live": "LIVE_API_TESTS=1 playwright test --config=playwright.live.config.ts",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:generate": "npm run db:generate -w @diratrack/database",
     "db:migrate": "npm run db:migrate -w @diratrack/database",
-    "db:seed": "npm run db:seed -w @diratrack/database"
+    "db:seed": "npm run db:seed -w @diratrack/database",
+    "test:db:generate": "cd packages/database && DATABASE_URL=${TEST_DATABASE_URL:-postgresql://diratrack:diratrack@localhost:5432/diratrack_test} npm run db:generate",
+    "test:db:migrate": "cd packages/database && DATABASE_URL=${TEST_DATABASE_URL:-postgresql://diratrack:diratrack@localhost:5432/diratrack_test} npm run db:migrate",
+    "test:db:reset": "node --experimental-strip-types e2e/global-teardown.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -29,5 +34,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "postgres": "^3.4.9"
   }
 }

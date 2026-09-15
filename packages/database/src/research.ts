@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { getDatabase } from "./index.ts";
-import { findings, projectIdentifiers, projects, projectSources, researchJobs, researchRuns, sourceChecks, sources } from "./schema.ts";
+import { auditEvents, findings, projectIdentifiers, projects, projectSources, researchJobs, researchRuns, sourceChecks, sources } from "./schema.ts";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -161,6 +161,25 @@ export async function cancelResearchRun(db: Database, projectId: string, researc
   });
 }
 
+/**
+ * Claims the next available research job for processing by a worker.
+ *
+ * **Attempt Semantics:**
+ * - `researchJobs.attempts` represents the cumulative number of times the job has been claimed by a worker.
+ * - When a job is first created, `attempts = 0`.
+ * - When claimed for execution, `attempts` is incremented to reflect the new execution attempt.
+ * - A retry job inherits the previous attempt count and increments when claimed.
+ * - Example flow:
+ *   - Initial job created: attempts = 0
+ *   - Worker claims job: attempts = 1 (first execution)
+ *   - Job fails, retry created: attempts = 1 (inherited, not yet executed)
+ *   - Worker claims retry: attempts = 2 (second execution)
+ *
+ * @param db Database instance
+ * @param workerId Unique identifier for the claiming worker
+ * @param leaseTimeoutMs Duration in milliseconds after which a running job is considered stale
+ * @returns The claimed job or null if no jobs are available
+ */
 export async function claimNextResearchJob(db: Database, workerId: string, leaseTimeoutMs = 5 * 60_000) {
   if (!Number.isFinite(leaseTimeoutMs) || leaseTimeoutMs <= 0) throw new Error("leaseTimeoutMs must be positive");
   const staleBefore = new Date(Date.now() - leaseTimeoutMs);
@@ -396,4 +415,394 @@ async function updateRunCompletion(transaction: Transaction, researchRunId: stri
     .update(researchRuns)
     .set({ status: (problemChecks?.count ?? 0) ? "completed-with-errors" : "completed", progress: 100, completedAt: now })
     .where(eq(researchRuns.id, researchRunId));
+}
+
+export async function completeManualActionWithNoResult(
+  db: Database,
+  projectId: string,
+  runId: string,
+  sourceCheckId: string,
+  userId?: string,
+) {
+  return db.transaction(async (transaction) => {
+    const now = new Date();
+
+    // Validate ownership and current state with FOR UPDATE lock
+    const [check] = await transaction
+      .select({ id: sourceChecks.id, status: sourceChecks.status, researchRunId: sourceChecks.researchRunId })
+      .from(sourceChecks)
+      .where(
+        and(
+          eq(sourceChecks.id, sourceCheckId),
+          eq(sourceChecks.projectId, projectId),
+          eq(sourceChecks.researchRunId, runId),
+        ),
+      )
+      .for("update");
+
+    if (!check) throw new Error("Source check not found or does not belong to this project");
+    if (check.status !== "waiting-for-user") throw new Error(`Source check must be in waiting-for-user state, currently: ${check.status}`);
+
+    // Find the associated waiting job
+    const [job] = await transaction
+      .select({ id: researchJobs.id })
+      .from(researchJobs)
+      .where(
+        and(
+          eq(researchJobs.sourceCheckId, sourceCheckId),
+          eq(researchJobs.projectId, projectId),
+          eq(researchJobs.status, "waiting-for-user"),
+        ),
+      )
+      .for("update");
+
+    if (!job) throw new Error("No waiting research job found for this source check");
+
+    // Update job status to completed
+    await transaction
+      .update(researchJobs)
+      .set({ status: "completed", progress: 100, completedAt: now, lockedBy: null, lockedAt: null })
+      .where(eq(researchJobs.id, job.id));
+
+    // Update sourceCheck status to no-results
+    const [updatedCheck] = await transaction
+      .update(sourceChecks)
+      .set({ status: "no-results", progress: 100, completedAt: now, manualAction: null })
+      .where(eq(sourceChecks.id, sourceCheckId))
+      .returning();
+
+    // Create audit event
+    await transaction.insert(auditEvents).values({
+      projectId,
+      actor: userId ? "user" : "system",
+      action: "complete-manual-action-no-result",
+      entityType: "source-check",
+      entityId: sourceCheckId,
+      metadata: { runId, userId },
+    });
+
+    // Recalculate run state
+    await updateRunCompletion(transaction, runId, now);
+
+    return updatedCheck;
+  });
+}
+
+export async function completeManualActionWithCandidateUrl(
+  db: Database,
+  projectId: string,
+  runId: string,
+  sourceCheckId: string,
+  candidateUrl: string,
+  title?: string,
+  notes?: string,
+  userId?: string,
+) {
+  return db.transaction(async (transaction) => {
+    const now = new Date();
+
+    // Validate URL
+    const urlPattern = /^https:\/\/.+/;
+    if (!urlPattern.test(candidateUrl)) {
+      throw new Error("URL must start with https://");
+    }
+    if (candidateUrl.startsWith("javascript:") || candidateUrl.startsWith("data:") || candidateUrl.startsWith("file:")) {
+      throw new Error("Invalid URL scheme");
+    }
+
+    // Validate ownership and current state with FOR UPDATE lock
+    const [check] = await transaction
+      .select({
+        id: sourceChecks.id,
+        status: sourceChecks.status,
+        researchRunId: sourceChecks.researchRunId,
+        sourceId: sourceChecks.sourceId,
+      })
+      .from(sourceChecks)
+      .where(
+        and(
+          eq(sourceChecks.id, sourceCheckId),
+          eq(sourceChecks.projectId, projectId),
+          eq(sourceChecks.researchRunId, runId),
+        ),
+      )
+      .for("update");
+
+    if (!check) throw new Error("Source check not found or does not belong to this project");
+    if (check.status !== "waiting-for-user") throw new Error(`Source check must be in waiting-for-user state, currently: ${check.status}`);
+
+    // Find the associated waiting job
+    const [job] = await transaction
+      .select({ id: researchJobs.id })
+      .from(researchJobs)
+      .where(
+        and(
+          eq(researchJobs.sourceCheckId, sourceCheckId),
+          eq(researchJobs.projectId, projectId),
+          eq(researchJobs.status, "waiting-for-user"),
+        ),
+      )
+      .for("update");
+
+    if (!job) throw new Error("No waiting research job found for this source check");
+
+    // Create finding with verificationStatus: requires-review
+    const [finding] = await transaction
+      .insert(findings)
+      .values({
+        projectId,
+        sourceCheckId,
+        externalId: `manual-${Date.now()}`,
+        title: title || "User-provided candidate",
+        summary: notes || "Manually provided URL from user action",
+        sourceUrl: candidateUrl,
+        verificationStatus: "requires-review",
+        matchingIdentifiers: [],
+        rawMetadata: { manuallyProvided: true, providedBy: userId },
+      })
+      .returning();
+
+    if (!finding) throw new Error("Failed to create finding");
+
+    // Update job status to completed
+    await transaction
+      .update(researchJobs)
+      .set({ status: "completed", progress: 100, completedAt: now, lockedBy: null, lockedAt: null })
+      .where(eq(researchJobs.id, job.id));
+
+    // Update sourceCheck status to completed and record sourceUrl
+    const [updatedCheck] = await transaction
+      .update(sourceChecks)
+      .set({
+        status: "completed",
+        progress: 100,
+        resultCount: 1,
+        completedAt: now,
+        manualAction: null,
+      })
+      .where(eq(sourceChecks.id, sourceCheckId))
+      .returning();
+
+    // Create audit event
+    await transaction.insert(auditEvents).values({
+      projectId,
+      actor: userId ? "user" : "system",
+      action: "complete-manual-action-with-url",
+      entityType: "source-check",
+      entityId: sourceCheckId,
+      metadata: { runId, userId, candidateUrl, findingId: finding.id },
+    });
+
+    // Recalculate run state
+    await updateRunCompletion(transaction, runId, now);
+
+    return { check: updatedCheck, finding };
+  });
+}
+
+export async function dismissManualAction(
+  db: Database,
+  projectId: string,
+  runId: string,
+  sourceCheckId: string,
+  reason: string,
+  userId?: string,
+) {
+  return db.transaction(async (transaction) => {
+    const now = new Date();
+
+    // Validate ownership and current state with FOR UPDATE lock
+    const [check] = await transaction
+      .select({ id: sourceChecks.id, status: sourceChecks.status, researchRunId: sourceChecks.researchRunId })
+      .from(sourceChecks)
+      .where(
+        and(
+          eq(sourceChecks.id, sourceCheckId),
+          eq(sourceChecks.projectId, projectId),
+          eq(sourceChecks.researchRunId, runId),
+        ),
+      )
+      .for("update");
+
+    if (!check) throw new Error("Source check not found or does not belong to this project");
+    if (check.status !== "waiting-for-user") throw new Error(`Source check must be in waiting-for-user state, currently: ${check.status}`);
+
+    // Find the associated waiting job
+    const [job] = await transaction
+      .select({ id: researchJobs.id })
+      .from(researchJobs)
+      .where(
+        and(
+          eq(researchJobs.sourceCheckId, sourceCheckId),
+          eq(researchJobs.projectId, projectId),
+          eq(researchJobs.status, "waiting-for-user"),
+        ),
+      )
+      .for("update");
+
+    if (!job) throw new Error("No waiting research job found for this source check");
+
+    // Update job status to completed
+    await transaction
+      .update(researchJobs)
+      .set({ status: "completed", progress: 100, completedAt: now, lockedBy: null, lockedAt: null })
+      .where(eq(researchJobs.id, job.id));
+
+    // Update sourceCheck status to skipped with dismissal info
+    const [updatedCheck] = await transaction
+      .update(sourceChecks)
+      .set({
+        status: "skipped",
+        progress: 100,
+        completedAt: now,
+        dismissedAt: now,
+        dismissedReason: reason,
+        manualAction: null,
+      })
+      .where(eq(sourceChecks.id, sourceCheckId))
+      .returning();
+
+    // Create audit event
+    await transaction.insert(auditEvents).values({
+      projectId,
+      actor: userId ? "user" : "system",
+      action: "dismiss-manual-action",
+      entityType: "source-check",
+      entityId: sourceCheckId,
+      metadata: { runId, userId, reason },
+    });
+
+    // Recalculate run state
+    await updateRunCompletion(transaction, runId, now);
+
+    return updatedCheck;
+  });
+}
+
+/**
+ * Retries a failed source check by creating a new pending job.
+ *
+ * **Attempt Semantics:**
+ * - The retry job inherits the previous job's attempt count.
+ * - The count is NOT incremented here; it will be incremented when claimNextResearchJob claims it.
+ * - This ensures `attempts` accurately reflects the number of actual executions.
+ * - Example flow:
+ *   - Failed job has attempts = 1 (one execution occurred)
+ *   - Retry creates new job with attempts = 1 (inherited, execution hasn't happened yet)
+ *   - Worker claims retry: attempts = 2 (second execution begins)
+ *
+ * @param db Database instance
+ * @param projectId Project identifier
+ * @param runId Research run identifier
+ * @param sourceCheckId Source check identifier to retry
+ * @param userId Optional user identifier for audit trail
+ * @returns The updated source check in pending state
+ */
+export async function retryFailedSource(
+  db: Database,
+  projectId: string,
+  runId: string,
+  sourceCheckId: string,
+  userId?: string,
+) {
+  return db.transaction(async (transaction) => {
+    const now = new Date();
+
+    // Validate ownership with FOR UPDATE lock
+    const [check] = await transaction
+      .select({
+        id: sourceChecks.id,
+        status: sourceChecks.status,
+        researchRunId: sourceChecks.researchRunId,
+        sourceId: sourceChecks.sourceId,
+      })
+      .from(sourceChecks)
+      .where(
+        and(
+          eq(sourceChecks.id, sourceCheckId),
+          eq(sourceChecks.projectId, projectId),
+          eq(sourceChecks.researchRunId, runId),
+        ),
+      )
+      .for("update");
+
+    if (!check) throw new Error("Source check not found or does not belong to this project");
+    if (check.status !== "failed") throw new Error(`Source check must be in failed state to retry, currently: ${check.status}`);
+
+    // Get source key for new job payload
+    const [source] = await transaction
+      .select({ key: sources.key })
+      .from(sources)
+      .where(eq(sources.id, check.sourceId));
+
+    if (!source) throw new Error("Source not found");
+
+    // Get current attempt count from the last job
+    const [lastJob] = await transaction
+      .select({ attempts: researchJobs.attempts })
+      .from(researchJobs)
+      .where(
+        and(
+          eq(researchJobs.sourceCheckId, sourceCheckId),
+          eq(researchJobs.projectId, projectId),
+        ),
+      )
+      .orderBy(sql`${researchJobs.createdAt} desc`)
+      .limit(1);
+
+    // Inherit the attempt count; it will be incremented when the job is claimed
+    const inheritedAttempts = lastJob?.attempts ?? 0;
+
+    // Reset sourceCheck to pending state
+    const [updatedCheck] = await transaction
+      .update(sourceChecks)
+      .set({
+        status: "pending",
+        progress: 0,
+        error: null,
+        startedAt: null,
+        completedAt: null,
+      })
+      .where(eq(sourceChecks.id, sourceCheckId))
+      .returning();
+
+    // Create new research job in pending status with inherited attempt count
+    await transaction.insert(researchJobs).values({
+      projectId,
+      researchRunId: runId,
+      sourceCheckId,
+      status: "pending",
+      progress: 0,
+      payload: { sourceKey: source.key },
+      attempts: inheritedAttempts,
+    });
+
+    // Create audit event - record that this is retry attempt (inheritedAttempts + 1)
+    await transaction.insert(auditEvents).values({
+      projectId,
+      actor: userId ? "user" : "system",
+      action: "retry-failed-source",
+      entityType: "source-check",
+      entityId: sourceCheckId,
+      metadata: { runId, userId, retryAttemptNumber: inheritedAttempts + 1 },
+    });
+
+    // Recalculate run state if run was terminal (reopen it)
+    const [run] = await transaction
+      .select({ status: researchRuns.status })
+      .from(researchRuns)
+      .where(eq(researchRuns.id, runId))
+      .for("update");
+
+    if (run && ["completed", "completed-with-errors"].includes(run.status)) {
+      await transaction
+        .update(researchRuns)
+        .set({ status: "pending", completedAt: null })
+        .where(eq(researchRuns.id, runId));
+    }
+
+    await updateRunCompletion(transaction, runId, now);
+
+    return updatedCheck;
+  });
 }

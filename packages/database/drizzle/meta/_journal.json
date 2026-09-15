@@ -36,6 +36,13 @@
       "when": 1788108187076,
       "tag": "0004_confused_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788543274000,
+      "tag": "0005_milestone1_manual_actions",
+      "breakpoints": true
     }
   ]
 }
