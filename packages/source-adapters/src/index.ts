@@ -1,14 +1,14 @@
-export interface ResearchIdentifier { type: string; value: string; }
-export interface SourceResearchContext { project: { name: string; city: string; developer: string | null }; identifiers: ResearchIdentifier[]; }
-export interface SourceDiscoveryResult { externalId: string; title: string; sourceUrl: string; summary: string; matchingIdentifiers: ResearchIdentifier[]; metadata: Record<string, unknown>; }
-export interface SourceAdapter { readonly id: string; discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]>; }
+import { type Fetcher, ManualActionRequiredError, type ResearchIdentifier, type SourceAdapter, type SourceDiscoveryResult, type SourceResearchContext } from "./types.ts";
+import { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
+import { PlanningAdministrationAdapter } from "./planning-administration.ts";
+import { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
+import { YehudMonossonAdapter } from "./yehud-monosson.ts";
 
-export interface ManualResearchAction { title: string; description: string; url: string; searchValue?: string; }
-
-export class ManualActionRequiredError extends Error {
-  readonly action: ManualResearchAction;
-  constructor(action: ManualResearchAction) { super(action.description); this.name = "ManualActionRequiredError"; this.action = action; }
-}
+export * from "./types.ts";
+export { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
+export { PlanningAdministrationAdapter } from "./planning-administration.ts";
+export { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
+export { YehudMonossonAdapter } from "./yehud-monosson.ts";
 
 export const mvpSourceCatalog = [
   { key: "discounted-housing", name: "דירה בהנחה", category: "official", baseUrl: "https://www.dira.moch.gov.il", adapterKey: "discounted-housing" },
@@ -23,7 +23,6 @@ export const mvpSourceCatalog = [
 export type MvpSourceDefinition = (typeof mvpSourceCatalog)[number];
 
 interface WordPressSearchResult { id: number; title: string; url: string; type: string; subtype: string; }
-type Fetcher = typeof fetch;
 
 export class AsiaCyrusAdapter implements SourceAdapter {
   readonly id = "asia-cyrus";
@@ -72,163 +71,6 @@ export class DiscountedHousingAdapter implements SourceAdapter {
       ? `יש לפתוח את רשימת ההגרלות הרשמית ולחפש את הגרלה ${lotteryNumber}. האתר דורש בדיקה אינטראקטיבית ולכן DiraTrack אינו מסמן תוצאה כאוטומטית.`
       : "יש לפתוח את רשימת ההגרלות הרשמית. חסר מספר הגרלה שמאפשר למקד את החיפוש.";
     throw new ManualActionRequiredError({ title: lotteryNumber ? `חיפוש הגרלה ${lotteryNumber} באתר הרשמי` : "חיפוש באתר דירה בהנחה", description, url: "https://www.dira.moch.gov.il/ProjectsList", searchValue: lotteryNumber });
-  }
-}
-
-export class YehudMonossonAdapter implements SourceAdapter {
-  readonly id = "yehud-monosson";
-  private readonly fetcher: Fetcher;
-
-  constructor(fetcher: Fetcher = fetch) { this.fetcher = fetcher; }
-
-  async discover(context: SourceResearchContext) {
-    const terms = buildMunicipalSearchTerms(context);
-    const discoveries = new Map<string, SourceDiscoveryResult>();
-
-    for (const term of terms) {
-      const endpoint = new URL("https://yehud-monosson.muni.il/wp-json/wp/v2/search");
-      endpoint.searchParams.set("search", term.value);
-      endpoint.searchParams.set("per_page", "20");
-      endpoint.searchParams.set("type", "post");
-      endpoint.searchParams.set("_fields", "id,title,url,type,subtype");
-      const response = await this.fetcher(endpoint, {
-        headers: { Accept: "application/json", "User-Agent": "DiraTrack/0.1 research-worker" },
-        signal: AbortSignal.timeout(20_000),
-      });
-
-      if (response.status === 403 || response.status === 429) {
-        throw new ManualActionRequiredError({
-          title: "נדרשת בדיקה ידנית באתר עיריית יהוד־מונוסון",
-          description: `האתר העירוני חסם זמנית את החיפוש האוטומטי. יש לפתוח את האתר הרשמי ולחפש את „${term.value}”.`,
-          url: "https://yehud-monosson.muni.il/",
-          searchValue: term.value,
-        });
-      }
-      if (!response.ok) throw new Error(`Yehud-Monosson search failed with HTTP ${response.status}`);
-
-      const results = await response.json() as unknown;
-      if (!Array.isArray(results)) throw new Error("Yehud-Monosson search returned an invalid response");
-
-      for (const result of results) {
-        if (!isWordPressSearchResult(result) || result.type !== "post" || !isOfficialMunicipalUrl(result.url)) continue;
-        const key = String(result.id);
-        const existing = discoveries.get(key);
-        const matchingIdentifiers = term.identifier ? [...(existing?.matchingIdentifiers ?? []), term.identifier] : (existing?.matchingIdentifiers ?? []);
-        discoveries.set(key, {
-          externalId: key,
-          title: decodeBasicHtmlEntities(result.title),
-          sourceUrl: result.url,
-          summary: `החיפוש באתר עיריית יהוד־מונוסון החזיר את העמוד עבור „${term.label}”. יש לפתוח את המקור ולאמת את הקשר לפרויקט.`,
-          matchingIdentifiers: uniqueIdentifiers(matchingIdentifiers),
-          metadata: {
-            provider: "wordpress-rest-api",
-            matchedTerms: [...new Set([...(existing?.metadata.matchedTerms as string[] | undefined ?? []), term.label])],
-            type: result.type,
-            subtype: result.subtype,
-          },
-        });
-      }
-    }
-
-    return [...discoveries.values()];
-  }
-}
-
-export class IsraelLandAuthorityAdapter implements SourceAdapter {
-  readonly id = "israel-land-authority";
-
-  async discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]> {
-    const tenderNumber = context.identifiers.find((id) => id.type === "tender-number")?.value.trim();
-    const lotNumber = context.identifiers.find((id) => id.type === "lot")?.value.trim();
-    const block = context.identifiers.find((id) => id.type === "block")?.value.trim();
-    const parcels = context.identifiers.filter((id) => id.type === "parcel").map((id) => id.value.trim()).filter((v) => v);
-    const uniqueParcels = [...new Set(parcels)];
-    const housingProjectNumber = context.identifiers.find((id) => id.type === "housing-project-number")?.value.trim();
-    const projectName = context.project.name.trim();
-    const city = context.project.city.trim();
-
-    let title: string;
-    let searchValue: string | undefined;
-    let description: string;
-
-    if (tenderNumber) {
-      title = `חיפוש מכרז ${tenderNumber} ברשות מקרקעי ישראל`;
-      searchValue = tenderNumber;
-      description = `יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולחפש מכרז ${tenderNumber}. יש לוודא שמספר המכרז תואם את המכרז של הפרויקט. התוצאה אינה מאומתת אוטומטית ודורשת בדיקה ידנית.`;
-    } else if (lotNumber) {
-      title = `חיפוש מגרש ${lotNumber} ברשות מקרקעי ישראל`;
-      searchValue = lotNumber;
-      description = `יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולחפש מגרש ${lotNumber}. יש לוודא שמספר המגרש תואם את הפרויקט. התוצאה אינה מאומתת אוטומטית ודורשת בדיקה ידנית.`;
-    } else if (block && uniqueParcels.length > 0) {
-      const parcelsList = uniqueParcels.join(", ");
-      title = `חיפוש גוש ${block} חלקה ${parcelsList} ברשות מקרקעי ישראל`;
-      searchValue = `גוש ${block} חלקה ${parcelsList}`;
-      description = `יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולחפש גוש ${block} חלקה ${parcelsList}. חיפוש לפי גוש וחלקה אינו מספיק כדי לקשר באופן ודאי מגרש או מכרז לפרויקט, ויש לבדוק שהמסמכים המקוריים מתייחסים לפרויקט המדויק.`;
-    } else if (housingProjectNumber) {
-      title = `חיפוש פרויקט דיור ${housingProjectNumber} ברשות מקרקעי ישראל`;
-      searchValue = housingProjectNumber;
-      description = `יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולחפש פרויקט דיור ${housingProjectNumber}. התוצאה אינה מאומתת אוטומטית ודורשת בדיקה ידנית.`;
-    } else if (projectName && city) {
-      title = `חיפוש רחב ברשות מקרקעי ישראל`;
-      searchValue = `${projectName} ${city}`;
-      description = `חסרים מזהים מדויקים (מספר מכרז, מגרש, גוש/חלקה או מספר פרויקט דיור). יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולנסות חיפוש רחב לפי "${projectName}" בעיר ${city}. חיפוש רחב עלול להחזיר תוצאות לא רלוונטיות, ויש לבדוק בקפידה.`;
-    } else {
-      title = "חיפוש ברשות מקרקעי ישראל";
-      description = "חסרים מזהים למיקוד החיפוש. יש להוסיף לפרויקט מספר מכרז, מגרש, גוש/חלקה, או מספר פרויקט דיור כדי לבצע חיפוש ממוקד יותר ברשות מקרקעי ישראל.";
-    }
-
-    throw new ManualActionRequiredError({
-      title,
-      description,
-      url: "https://www.gov.il/he/departments/israel_land_authority/govil-landing-page",
-      searchValue,
-    });
-  }
-}
-
-export class PlanningAdministrationAdapter implements SourceAdapter {
-  readonly id = "planning-administration";
-
-  async discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]> {
-    const planNumber = context.identifiers.find((id) => id.type === "plan-number")?.value.trim();
-    const block = context.identifiers.find((id) => id.type === "block")?.value.trim();
-    const parcels = context.identifiers.filter((id) => id.type === "parcel").map((id) => id.value.trim()).filter((v) => v);
-    const uniqueParcels = [...new Set(parcels)];
-    const permitRequestNumber = context.identifiers.find((id) => id.type === "permit-request-number")?.value.trim();
-    const city = context.project.city.trim();
-
-    let title: string;
-    let searchValue: string | undefined;
-    let description: string;
-
-    if (planNumber) {
-      title = `חיפוש תוכנית ${planNumber} במינהל התכנון`;
-      searchValue = planNumber;
-      description = `יש לפתוח את האתר הרשמי של מינהל התכנון (מידע תכנוני) ולחפש תוכנית ${planNumber}. יש לוודא שמספר התוכנית תואם לפרויקט ולבדוק את המסמכים המקוריים של התוכנית. התוצאה אינה מאומתת אוטומטית.`;
-    } else if (block && uniqueParcels.length > 0) {
-      const parcelsList = uniqueParcels.join(", ");
-      title = `חיפוש גוש ${block} חלקה ${parcelsList} במינהל התכנון`;
-      searchValue = `גוש ${block} חלקה ${parcelsList}`;
-      description = `יש לפתוח את האתר הרשמי של מינהל התכנון (מידע תכנוני) ולחפש גוש ${block} חלקה ${parcelsList}. זיהוי גוש או חלקה תואמים אינו מספיק כדי לקשר באופן ודאי תוכנית או היתר לפרויקט, ויש לבדוק את המסמכים המקוריים ולוודא שהתוכנית רלוונטית לפרויקט המדויק.`;
-    } else if (permitRequestNumber) {
-      title = `חיפוש בקשה להיתר ${permitRequestNumber} במינהל התכנון`;
-      searchValue = permitRequestNumber;
-      description = `יש לפתוח את האתר הרשמי של מינהל התכנון (מידע תכנוני) ולבדוק אם ניתן לחפש לפי מספר בקשה להיתר ${permitRequestNumber}. לא כל שירותי החיפוש תומכים בחיפוש לפי מספר בקשה. יש לוודא שהבקשה רלוונטית לפרויקט.`;
-    } else if (city) {
-      title = `חיפוש רחב במינהל התכנון`;
-      searchValue = city;
-      description = `חסרים מזהים מדויקים (מספר תוכנית, גוש/חלקה או מספר בקשה להיתר). יש לפתוח את האתר הרשמי של מינהל התכנון (מידע תכנוני) ולבצע חיפוש רחב לפי העיר ${city}. חיפוש רחב עלול להחזיר תוכניות ומסמכים רבים שאינם קשורים לפרויקט, ויש לבדוק בקפידה.`;
-    } else {
-      title = "חיפוש במינהל התכנון";
-      description = "חסרים מזהים למיקוד החיפוש. יש להוסיף לפרויקט מספר תוכנית, גוש/חלקה, או מספר בקשה להיתר כדי לבצע חיפוש ממוקד יותר במינהל התכנון.";
-    }
-
-    throw new ManualActionRequiredError({
-      title,
-      description,
-      url: "https://www.gov.il/he/departments/iplan/govil-landing-page",
-      searchValue,
-    });
   }
 }
 
@@ -286,12 +128,13 @@ export function getSourceAdapter(sourceKey: string): SourceAdapter | null {
   if (sourceKey === "discounted-housing") return new DiscountedHousingAdapter();
   if (sourceKey === "israel-land-authority") return new IsraelLandAuthorityAdapter();
   if (sourceKey === "planning-administration") return new PlanningAdministrationAdapter();
+  if (sourceKey === "yehud-local-planning") return new YehudLocalPlanningAdapter();
   if (sourceKey === "yehud-monosson") return new YehudMonossonAdapter(fetcher);
   return null;
 }
 
 export function sourceRequiresManualAction(sourceKey: string) {
-  return sourceKey === "discounted-housing" || sourceKey === "israel-land-authority" || sourceKey === "planning-administration";
+  return sourceKey === "discounted-housing" || sourceKey === "israel-land-authority" || sourceKey === "planning-administration" || sourceKey === "yehud-local-planning";
 }
 
 export function sourceSendsExternalData(sourceKey: string) {
@@ -307,33 +150,6 @@ function buildSearchTerms(context: SourceResearchContext) {
     if (value) terms.push({ value, label: `${identifierTypeLabel(identifier.type)} ${value}`, identifier: { type: identifier.type, value } });
   }
   return terms.filter((term, index, all) => all.findIndex((candidate) => candidate.value === term.value) === index);
-}
-
-function buildMunicipalSearchTerms(context: SourceResearchContext) {
-  const terms: Array<{ value: string; label: string; identifier?: ResearchIdentifier }> = [];
-  const projectName = context.project.name.trim();
-  const developer = context.project.developer?.trim();
-  if (projectName && !/^פרויקט(?:\s+\d+)?$/u.test(projectName)) terms.push({ value: projectName, label: `שם הפרויקט: ${projectName}` });
-  if (developer) terms.push({ value: developer, label: `יזם: ${developer}` });
-
-  const allowedIdentifiers = new Set(["block", "parcel", "lot", "plan-number", "tender-number", "permit-request-number", "lottery-number"]);
-  for (const identifier of context.identifiers) {
-    const value = identifier.value.trim();
-    if (!value || !allowedIdentifiers.has(identifier.type)) continue;
-    const normalized = { type: identifier.type, value };
-    const searchValue = `${identifierTypeLabel(identifier.type)} ${value}`;
-    terms.push({ value: searchValue, label: searchValue, identifier: normalized });
-  }
-
-  return terms.filter((term, index, all) => all.findIndex((candidate) => candidate.value === term.value) === index).slice(0, 10);
-}
-
-function isOfficialMunicipalUrl(value: string) {
-  try {
-    return new URL(value).origin === "https://yehud-monosson.muni.il";
-  } catch {
-    return false;
-  }
 }
 
 function isWordPressSearchResult(value: unknown): value is WordPressSearchResult {
