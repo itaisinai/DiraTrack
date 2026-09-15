@@ -18,6 +18,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report",
     "test:e2e:live": "LIVE_API_TESTS=1 playwright test --config=playwright.live.config.ts",
+    "test:sources:live": "npm run test:live -w @diratrack/source-adapters",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:generate": "npm run db:generate -w @diratrack/database",

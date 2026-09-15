@@ -24,7 +24,7 @@ export default defineConfig({
   projects: [
     {
       name: "api",
-      testMatch: "e2e/api.spec.ts",
+      testMatch: ["e2e/api.spec.ts", "e2e/municipal-sources.spec.ts"],
       grepInvert: /@live/,
       use: {},
     },
