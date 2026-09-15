@@ -134,6 +134,104 @@ export class YehudMonossonAdapter implements SourceAdapter {
   }
 }
 
+export class IsraelLandAuthorityAdapter implements SourceAdapter {
+  readonly id = "israel-land-authority";
+
+  async discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]> {
+    const tenderNumber = context.identifiers.find((id) => id.type === "tender-number")?.value.trim();
+    const lotNumber = context.identifiers.find((id) => id.type === "lot")?.value.trim();
+    const block = context.identifiers.find((id) => id.type === "block")?.value.trim();
+    const parcels = context.identifiers.filter((id) => id.type === "parcel").map((id) => id.value.trim()).filter((v) => v);
+    const uniqueParcels = [...new Set(parcels)];
+    const housingProjectNumber = context.identifiers.find((id) => id.type === "housing-project-number")?.value.trim();
+    const projectName = context.project.name.trim();
+    const city = context.project.city.trim();
+
+    let title: string;
+    let searchValue: string | undefined;
+    let description: string;
+
+    if (tenderNumber) {
+      title = `חיפוש מכרז ${tenderNumber} ברשות מקרקעי ישראל`;
+      searchValue = tenderNumber;
+      description = `יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולחפש מכרז ${tenderNumber}. יש לוודא שמספר המכרז תואם את המכרז של הפרויקט. התוצאה אינה מאומתת אוטומטית ודורשת בדיקה ידנית.`;
+    } else if (lotNumber) {
+      title = `חיפוש מגרש ${lotNumber} ברשות מקרקעי ישראל`;
+      searchValue = lotNumber;
+      description = `יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולחפש מגרש ${lotNumber}. יש לוודא שמספר המגרש תואם את הפרויקט. התוצאה אינה מאומתת אוטומטית ודורשת בדיקה ידנית.`;
+    } else if (block && uniqueParcels.length > 0) {
+      const parcelsList = uniqueParcels.join(", ");
+      title = `חיפוש גוש ${block} חלקה ${parcelsList} ברשות מקרקעי ישראל`;
+      searchValue = `גוש ${block} חלקה ${parcelsList}`;
+      description = `יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולחפש גוש ${block} חלקה ${parcelsList}. חיפוש לפי גוש וחלקה אינו מספיק כדי לקשר באופן ודאי מגרש או מכרז לפרויקט, ויש לבדוק שהמסמכים המקוריים מתייחסים לפרויקט המדויק.`;
+    } else if (housingProjectNumber) {
+      title = `חיפוש פרויקט דיור ${housingProjectNumber} ברשות מקרקעי ישראל`;
+      searchValue = housingProjectNumber;
+      description = `יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולחפש פרויקט דיור ${housingProjectNumber}. התוצאה אינה מאומתת אוטומטית ודורשת בדיקה ידנית.`;
+    } else if (projectName && city) {
+      title = `חיפוש רחב ברשות מקרקעי ישראל`;
+      searchValue = `${projectName} ${city}`;
+      description = `חסרים מזהים מדויקים (מספר מכרז, מגרש, גוש/חלקה או מספר פרויקט דיור). יש לפתוח את האתר הרשמי של רשות מקרקעי ישראל ולנסות חיפוש רחב לפי "${projectName}" בעיר ${city}. חיפוש רחב עלול להחזיר תוצאות לא רלוונטיות, ויש לבדוק בקפידה.`;
+    } else {
+      title = "חיפוש ברשות מקרקעי ישראל";
+      description = "חסרים מזהים למיקוד החיפוש. יש להוסיף לפרויקט מספר מכרז, מגרש, גוש/חלקה, או מספר פרויקט דיור כדי לבצע חיפוש ממוקד יותר ברשות מקרקעי ישראל.";
+    }
+
+    throw new ManualActionRequiredError({
+      title,
+      description,
+      url: "https://www.gov.il/he/departments/israel_land_authority/govil-landing-page",
+      searchValue,
+    });
+  }
+}
+
+export class PlanningAdministrationAdapter implements SourceAdapter {
+  readonly id = "planning-administration";
+
+  async discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]> {
+    const planNumber = context.identifiers.find((id) => id.type === "plan-number")?.value.trim();
+    const block = context.identifiers.find((id) => id.type === "block")?.value.trim();
+    const parcels = context.identifiers.filter((id) => id.type === "parcel").map((id) => id.value.trim()).filter((v) => v);
+    const uniqueParcels = [...new Set(parcels)];
+    const permitRequestNumber = context.identifiers.find((id) => id.type === "permit-request-number")?.value.trim();
+    const city = context.project.city.trim();
+
+    let title: string;
+    let searchValue: string | undefined;
+    let description: string;
+
+    if (planNumber) {
+      title = `חיפוש תוכנית ${planNumber} במינהל התכנון`;
+      searchValue = planNumber;
+      description = `יש לפתוח את האתר הרשמי של מינהל התכנון (מידע תכנוני) ולחפש תוכנית ${planNumber}. יש לוודא שמספר התוכנית תואם לפרויקט ולבדוק את המסמכים המקוריים של התוכנית. התוצאה אינה מאומתת אוטומטית.`;
+    } else if (block && uniqueParcels.length > 0) {
+      const parcelsList = uniqueParcels.join(", ");
+      title = `חיפוש גוש ${block} חלקה ${parcelsList} במינהל התכנון`;
+      searchValue = `גוש ${block} חלקה ${parcelsList}`;
+      description = `יש לפתוח את האתר הרשמי של מינהל התכנון (מידע תכנוני) ולחפש גוש ${block} חלקה ${parcelsList}. זיהוי גוש או חלקה תואמים אינו מספיק כדי לקשר באופן ודאי תוכנית או היתר לפרויקט, ויש לבדוק את המסמכים המקוריים ולוודא שהתוכנית רלוונטית לפרויקט המדויק.`;
+    } else if (permitRequestNumber) {
+      title = `חיפוש בקשה להיתר ${permitRequestNumber} במינהל התכנון`;
+      searchValue = permitRequestNumber;
+      description = `יש לפתוח את האתר הרשמי של מינהל התכנון (מידע תכנוני) ולבדוק אם ניתן לחפש לפי מספר בקשה להיתר ${permitRequestNumber}. לא כל שירותי החיפוש תומכים בחיפוש לפי מספר בקשה. יש לוודא שהבקשה רלוונטית לפרויקט.`;
+    } else if (city) {
+      title = `חיפוש רחב במינהל התכנון`;
+      searchValue = city;
+      description = `חסרים מזהים מדויקים (מספר תוכנית, גוש/חלקה או מספר בקשה להיתר). יש לפתוח את האתר הרשמי של מינהל התכנון (מידע תכנוני) ולבצע חיפוש רחב לפי העיר ${city}. חיפוש רחב עלול להחזיר תוכניות ומסמכים רבים שאינם קשורים לפרויקט, ויש לבדוק בקפידה.`;
+    } else {
+      title = "חיפוש במינהל התכנון";
+      description = "חסרים מזהים למיקוד החיפוש. יש להוסיף לפרויקט מספר תוכנית, גוש/חלקה, או מספר בקשה להיתר כדי לבצע חיפוש ממוקד יותר במינהל התכנון.";
+    }
+
+    throw new ManualActionRequiredError({
+      title,
+      description,
+      url: "https://www.gov.il/he/departments/iplan/govil-landing-page",
+      searchValue,
+    });
+  }
+}
+
 /**
  * Create mock fetcher for E2E tests
  * Returns deterministic responses without making external requests
@@ -186,12 +284,14 @@ export function getSourceAdapter(sourceKey: string): SourceAdapter | null {
 
   if (sourceKey === "asia-cyrus") return new AsiaCyrusAdapter(fetcher);
   if (sourceKey === "discounted-housing") return new DiscountedHousingAdapter();
+  if (sourceKey === "israel-land-authority") return new IsraelLandAuthorityAdapter();
+  if (sourceKey === "planning-administration") return new PlanningAdministrationAdapter();
   if (sourceKey === "yehud-monosson") return new YehudMonossonAdapter(fetcher);
   return null;
 }
 
 export function sourceRequiresManualAction(sourceKey: string) {
-  return sourceKey === "discounted-housing";
+  return sourceKey === "discounted-housing" || sourceKey === "israel-land-authority" || sourceKey === "planning-administration";
 }
 
 export function sourceSendsExternalData(sourceKey: string) {
