@@ -65,6 +65,24 @@ export const sourceCategoryEnum = pgEnum("source_category", [
   "user-upload",
 ]);
 
+export const sourceHealthStatusEnum = pgEnum("source_health_status", [
+  "healthy",
+  "degraded",
+  "unavailable",
+  "manual-only",
+  "not-checked",
+]);
+
+export const sourceErrorCategoryEnum = pgEnum("source_error_category", [
+  "timeout",
+  "rate-limit",
+  "access-denied",
+  "captcha-required",
+  "invalid-response",
+  "network-error",
+  "unknown",
+]);
+
 export const identifierTypeEnum = pgEnum("identifier_type", [
   "lottery-number",
   "housing-project-number",
@@ -206,9 +224,19 @@ export const sources = pgTable(
     baseUrl: text("base_url"),
     adapterKey: text("adapter_key"),
     isEnabled: boolean("is_enabled").notNull().default(true),
+    healthStatus: sourceHealthStatusEnum("health_status").notNull().default("not-checked"),
+    lastHealthCheckAt: timestamp("last_health_check_at", { withTimezone: true }),
+    lastErrorCategory: sourceErrorCategoryEnum("last_error_category"),
+    lastErrorMessage: text("last_error_message"),
+    timeoutMs: integer("timeout_ms").notNull().default(20000),
+    retryPolicy: jsonb("retry_policy"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("sources_key_unique").on(table.key)],
+  (table) => [
+    uniqueIndex("sources_key_unique").on(table.key),
+    index("sources_health_status_idx").on(table.healthStatus),
+    check("sources_timeout_positive_check", sql`${table.timeoutMs} > 0`),
+  ],
 );
 
 export const projectSources = pgTable(
