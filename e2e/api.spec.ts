@@ -622,7 +622,143 @@ test.describe("API - Validation Errors", () => {
 
     expect(response.status()).toBe(400);
   });
+});
 
+test.describe("API - External Data Consent Enforcement", () => {
+  test("POST /api/projects/:slug/research-runs with yehud-monosson without consent returns 400", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    const response = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`,
+      {
+        data: { sourceKeys: ["yehud-monosson"] },
+      }
+    );
+
+    expect(response.status()).toBe(400);
+    const data = await response.json();
+    expect(data.error).toContain("consent");
+  });
+
+  test("POST /api/projects/:slug/research-runs with yehud-monosson with consent starts run", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    const response = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`,
+      {
+        data: { sourceKeys: ["yehud-monosson"], externalDataConsent: true },
+      }
+    );
+
+    expect(response.status()).toBe(202);
+    const data = await response.json();
+    expect(data.researchRun).toBeDefined();
+    expect(data.researchRun.id).toBeDefined();
+  });
+
+  test("POST /api/projects/:slug/research-runs with asia-cyrus without consent returns 400", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    const response = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`,
+      {
+        data: { sourceKeys: ["asia-cyrus"], externalDataConsent: false },
+      }
+    );
+
+    expect(response.status()).toBe(400);
+    const data = await response.json();
+    expect(data.error).toContain("consent");
+  });
+
+  test("POST /api/projects/:slug/research-runs with discounted-housing without consent succeeds", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    const response = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`,
+      {
+        data: { sourceKeys: ["discounted-housing"] },
+      }
+    );
+
+    expect(response.status()).toBe(202);
+    const data = await response.json();
+    expect(data.researchRun).toBeDefined();
+  });
+
+  test("POST /api/projects/:slug/research-runs with multiple sources requires consent if any sends external data", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    const response = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`,
+      {
+        data: { sourceKeys: ["discounted-housing", "yehud-monosson"] },
+      }
+    );
+
+    expect(response.status()).toBe(400);
+    const data = await response.json();
+    expect(data.error).toContain("consent");
+
+    const responseWithConsent = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`,
+      {
+        data: { sourceKeys: ["discounted-housing", "yehud-monosson"], externalDataConsent: true },
+      }
+    );
+
+    expect(responseWithConsent.status()).toBe(202);
+  });
+
+  test("POST /api/projects/:slug/research-runs without sourceKeys cannot bypass consent requirement", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    // Enable yehud-monosson source (which sends external data)
+    await request.patch(`/api/projects/${encodeURIComponent(project.currentSlug)}/sources`, {
+      data: { sourceKey: "yehud-monosson", isEnabled: true },
+    });
+
+    // Attempt to start research without specifying sources and without consent
+    const response = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`,
+      {}
+    );
+
+    // Should fail because omitting sourceKeys uses all enabled sources, which includes yehud-monosson
+    expect(response.status()).toBe(400);
+    const data = await response.json();
+    expect(data.error).toContain("consent");
+  });
+
+  test("POST /api/projects/:slug/research-runs without consent does not create run or jobs", async ({ request }) => {
+    const testId = generateTestId();
+    const { project } = await createTestProject(request, { testId });
+
+    // Attempt without consent
+    const response = await request.post(
+      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`,
+      {
+        data: { sourceKeys: ["asia-cyrus"] },
+      }
+    );
+
+    expect(response.status()).toBe(400);
+
+    // Verify no research run was created
+    const runsResponse = await request.get(`/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs`);
+    expect(runsResponse.status()).toBe(200);
+    const runsData = await runsResponse.json();
+    expect(runsData.researchRuns).toHaveLength(0);
+  });
+});
+
+test.describe("API - Edge Cases", () => {
   test("POST /api/projects with duplicate name creates unique slug", async ({ request }) => {
     const testId = generateTestId();
     const projectName = `פרויקט כפול ${testId}`;
