@@ -3,8 +3,11 @@ import { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
 import { PlanningAdministrationAdapter } from "./planning-administration.ts";
 import { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
 import { YehudMonossonAdapter } from "./yehud-monosson.ts";
+import { createDefaultCapability, type SourceCapability, type SourceImplementationMode } from "./source-health.ts";
 
 export * from "./types.ts";
+export * from "./source-health.ts";
+export * from "./health-check.ts";
 export { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
 export { PlanningAdministrationAdapter } from "./planning-administration.ts";
 export { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
@@ -168,4 +171,32 @@ function identifierTypeLabel(type: string) {
 
 function decodeBasicHtmlEntities(value: string) {
   return value.replaceAll("&amp;", "&").replaceAll("&#8211;", "–").replaceAll("&#8212;", "—").replaceAll("&#39;", "'").replaceAll("&quot;", "\"");
+}
+
+/**
+ * Builds source capability metadata for all registered sources
+ */
+export function getSourceCapabilities(): SourceCapability[] {
+  return mvpSourceCatalog.map((source) => {
+    const mode: SourceImplementationMode =
+      source.key === "user-uploads" ? "user-upload" :
+      sourceRequiresManualAction(source.key) ? "manual" :
+      "automatic";
+
+    return createDefaultCapability(
+      source.key,
+      source.name,
+      source.category,
+      mode,
+      source.baseUrl,
+    );
+  });
+}
+
+/**
+ * Gets capability metadata for a specific source
+ */
+export function getSourceCapability(sourceKey: string): SourceCapability | null {
+  const capabilities = getSourceCapabilities();
+  return capabilities.find((cap) => cap.key === sourceKey) ?? null;
 }

@@ -171,9 +171,9 @@ This document describes the complete path from the current MVP to a fully-featur
 
 ## Milestone 2: Real Source Expansion 🌐
 
-**Goal**: Connect 5 additional official and municipal sources
+**Goal**: Connect 5 additional official and municipal sources, establish source health model, harden automatic adapters
 
-**Status**: ✅ **3 of 5 completed** (Israel Land Authority, Planning Administration, and Yehud-Monosson completed in PR #17 and feat/government-manual-sources)
+**Status**: ⚠️ **Partially Complete** - All 7 MVP sources implemented, but production hardening and health model remain
 
 ### Sources Completed
 
@@ -181,100 +181,99 @@ This document describes the complete path from the current MVP to a fully-featur
 - **URL**: `https://www.gov.il/he/departments/israel_land_authority/govil-landing-page`
 - **Search Strategy**: Tender number → Lot → Block/parcel → Housing project number → Project name + city
 - **Type**: Manual (requires browser navigation)
-- **Implementation**: ✅ Creates manual action with search identifiers
+- **Implementation**: ✅ Creates manual action with search identifiers (PR #19)
 
 #### ✅ 2.2 Planning Administration (מינהל התכנון)
 - **URL**: `https://www.gov.il/he/departments/iplan/govil-landing-page`
 - **Search Strategy**: Plan number → Block/parcel → Permit request number → City
 - **Type**: Manual (requires browser navigation)
-- **Implementation**: ✅ Creates manual action with search identifiers
+- **Implementation**: ✅ Creates manual action with search identifiers (PR #19)
+
+#### ✅ 2.3 Yehud Local Planning Committee
+- **URL**: `https://yehud.bartech-net.co.il`
+- **Search Strategy**: Plan number, block/parcel, lot, permit request
+- **Type**: Manual (requires browser navigation)
+- **Implementation**: ✅ Creates manual action with search identifiers (PR #19)
 
 #### ✅ 2.4 Yehud-Monosson Municipality
 - **URL**: `https://www.yehud-monosson.muni.il`
 - **Search Strategy**: Project name, developer, identifiers (block, parcel, plan, tender, etc.)
-- **Type**: Automatic (WordPress API with fallback to manual on rate-limit)
-- **Implementation**: ✅ WordPress REST API search with rate-limit handling (PR #17)
+- **Type**: Automatic (WordPress API with fallback to manual on 403/429)
+- **Implementation**: ✅ WordPress REST API search with rate-limit handling (PR #18)
 
-### Sources Remaining
+#### ✅ 2.5 Asia Cyrus Developer Site (pre-existing)
+- **URL**: `https://www.asia-cyrus.co.il`
+- **Search Strategy**: Project name, city, identifiers
+- **Type**: Automatic (WordPress API)
+- **Implementation**: ✅ WordPress REST API search (baseline MVP)
 
-#### 2.3 Yehud Local Planning Committee
-- **URL**: `https://yehud.bartech-net.co.il`
-- **Search Strategy**: Address, block/parcel, plan number
-- **Type**: Investigate (may have API or require scraping)
-- **Fallback**: Manual with link
-- **Status**: 🔜 Planned for separate PR
+### Work Remaining for Milestone 2 Closure
 
-#### 2.5 Developer Website Adapter Framework
-- **Type**: Pluggable per-developer strategy
-- **Current**: Asia Cyrus (already implemented)
-- **Framework**: Generic developer adapter interface
-- **Status**: 🔜 Planned for future enhancement
+#### 🔧 Source Health and Capability Model
+- [ ] Formal source capability type definitions
+- [ ] Database migration for health tracking (status, last check, error category, timeouts, retry policy)
+- [ ] Source health check logic (strict timeouts, no project data sent, manual-only awareness)
+- [ ] Read-only health API endpoint
+- [ ] UI display of health status and recovery actions
 
-### Per-Source Requirements
-- [ ] Stable source key in catalog
-- [ ] Search strategy documented
-- [ ] Exact identifiers used listed
-- [ ] External data disclosure in consent
-- [ ] Timeout (20s default)
-- [ ] Rate limit strategy
-- [ ] Retry policy (3 attempts with backoff)
-- [ ] Manual fallback for all sources
-- [ ] CAPTCHA handling plan
-- [ ] Original URL preservation
-- [ ] Evidence metadata structure
-- [ ] Mocked deterministic tests
-- [ ] Real read-only smoke test
-- [ ] Hebrew UI copy for all states
+#### 🔧 Adapter Hardening
+- [ ] Add retry logic with exponential backoff to Asia Cyrus
+- [ ] Add retry logic with exponential backoff to Yehud-Monosson
+- [ ] Do not retry permanent 4xx errors
+- [ ] Respect 429 Retry-After headers
+- [ ] Convert rate limits and access blocks to explicit manual-action states
+- [ ] Ensure worker continues when one source fails
 
-### Backend Work
-- [ ] Create adapter for each source
-- [ ] Generic CAPTCHA-required manual action pattern
-- [ ] Rate limiting per source
-- [ ] Backoff on failure
-- [ ] Source health check endpoint
+#### 🔧 Developer Adapter Framework
+- [ ] Pluggable registry/interface for developer-specific adapters
+- [ ] Migrate Asia Cyrus to use framework without changing safety behavior
+- [ ] Safe fallback for missing developer adapters
+- [ ] Unit tests for registration, lookup, and fallback
 
-### Frontend Work
-- [ ] Per-source configuration UI
-- [ ] Source health indicators
-- [ ] Manual action templates per source type
-- [ ] Instructions for each manual step
+#### 🔧 Testing
+- [ ] Unit tests for capability model and health states
+- [ ] Unit tests for retry/backoff behavior
+- [ ] Unit tests for developer adapter framework
+- [ ] Integration tests for health checks and API
+- [ ] E2E tests for hardened adapter behavior
+- [ ] Worker continuation tests when sources fail
 
-### Database Work
-- [ ] `source.lastHealthCheck` column
-- [ ] `source.healthStatus` column
-- [ ] `source.rateLimit` configuration
-- [ ] Migration
+### Per-Source Status
+- ✅ Stable source keys in catalog
+- ✅ Search strategies documented in adapter code
+- ✅ Identifiers used per source listed
+- ✅ External data disclosure in consent (Asia Cyrus, Yehud-Monosson)
+- ⚠️ Timeout (20s hardcoded) - needs configuration model
+- ⚠️ Rate limit strategy (basic 403/429 handling in Yehud-Monosson) - needs retry framework
+- ❌ Retry policy - not yet implemented
+- ✅ Manual fallback for all sources
+- ✅ CAPTCHA handling (manual action)
+- ✅ Original URL preservation
+- ✅ Evidence metadata structure
+- ✅ Mocked deterministic tests
+- ⚠️ Real read-only smoke tests (infrastructure exists via LIVE_API_TESTS flag)
+- ✅ Hebrew UI copy for all states
 
-### Tests
-- [ ] Mock tests for each adapter
-- [ ] Rate limit enforcement tests
-- [ ] Health check tests
-- [ ] Manual action generation tests
-- [ ] Separate live smoke tests (not in main suite)
-
-### Security/Privacy
-- [ ] Read-only operations only
-- [ ] No CAPTCHA bypass attempts
-- [ ] Respect robots.txt
-- [ ] Clear User-Agent
-- [ ] No personal registrant numbers sent
-- [ ] Failed health checks don't block other sources
-
-### Dependencies
-- Milestone 1 (complete lifecycle)
-
-### Definition of Done
+### Definition of Done for Milestone 2 Closure
 - ✅ All 7 MVP sources connected
 - ✅ Each source tested in isolation
-- ✅ Health checks working
+- ⚠️ **Health checks working** ← in progress (feat/milestone2-closure)
 - ✅ Manual fallbacks tested
-- ✅ Rate limits enforced
+- ⚠️ **Rate limits enforced with retry** ← in progress (feat/milestone2-closure)
+- ⚠️ **Developer adapter framework** ← in progress (feat/milestone2-closure)
 - ✅ Documentation for each source
 
+### Security/Privacy Compliance
+- ✅ Read-only operations only
+- ✅ No CAPTCHA bypass attempts
+- ✅ Clear User-Agent in adapters
+- ✅ No personal registrant numbers sent automatically
+- ⚠️ **Failed health checks don't block other sources** ← needs verification
+
 ### Explicit Exclusions
-- Not scraping CAPTCHA-protected sources
-- Not automating interactive-only sources
-- Not adding sources outside MVP scope
+- ✅ Not scraping CAPTCHA-protected sources
+- ✅ Not automating interactive-only sources
+- ✅ Not adding sources outside MVP scope
 
 ---
 

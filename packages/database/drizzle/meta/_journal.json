@@ -43,6 +43,13 @@
       "when": 1788543274000,
       "tag": "0005_milestone1_manual_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789499277491,
+      "tag": "0006_bitter_sasquatch",
+      "breakpoints": true
     }
   ]
 }
