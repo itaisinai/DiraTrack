@@ -1,14 +1,10 @@
-export interface ResearchIdentifier { type: string; value: string; }
-export interface SourceResearchContext { project: { name: string; city: string; developer: string | null }; identifiers: ResearchIdentifier[]; }
-export interface SourceDiscoveryResult { externalId: string; title: string; sourceUrl: string; summary: string; matchingIdentifiers: ResearchIdentifier[]; metadata: Record<string, unknown>; }
-export interface SourceAdapter { readonly id: string; discover(context: SourceResearchContext): Promise<SourceDiscoveryResult[]>; }
+import { type Fetcher, ManualActionRequiredError, type ResearchIdentifier, type SourceAdapter, type SourceDiscoveryResult, type SourceResearchContext } from "./types.ts";
+import { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
+import { YehudMonossonAdapter } from "./yehud-monosson.ts";
 
-export interface ManualResearchAction { title: string; description: string; url: string; searchValue?: string; }
-
-export class ManualActionRequiredError extends Error {
-  readonly action: ManualResearchAction;
-  constructor(action: ManualResearchAction) { super(action.description); this.name = "ManualActionRequiredError"; this.action = action; }
-}
+export * from "./types.ts";
+export { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
+export { YehudMonossonAdapter } from "./yehud-monosson.ts";
 
 export const mvpSourceCatalog = [
   { key: "discounted-housing", name: "דירה בהנחה", category: "official", baseUrl: "https://www.dira.moch.gov.il", adapterKey: "discounted-housing" },
@@ -23,7 +19,6 @@ export const mvpSourceCatalog = [
 export type MvpSourceDefinition = (typeof mvpSourceCatalog)[number];
 
 interface WordPressSearchResult { id: number; title: string; url: string; type: string; subtype: string; }
-type Fetcher = typeof fetch;
 
 export class AsiaCyrusAdapter implements SourceAdapter {
   readonly id = "asia-cyrus";
@@ -72,65 +67,6 @@ export class DiscountedHousingAdapter implements SourceAdapter {
       ? `יש לפתוח את רשימת ההגרלות הרשמית ולחפש את הגרלה ${lotteryNumber}. האתר דורש בדיקה אינטראקטיבית ולכן DiraTrack אינו מסמן תוצאה כאוטומטית.`
       : "יש לפתוח את רשימת ההגרלות הרשמית. חסר מספר הגרלה שמאפשר למקד את החיפוש.";
     throw new ManualActionRequiredError({ title: lotteryNumber ? `חיפוש הגרלה ${lotteryNumber} באתר הרשמי` : "חיפוש באתר דירה בהנחה", description, url: "https://www.dira.moch.gov.il/ProjectsList", searchValue: lotteryNumber });
-  }
-}
-
-export class YehudMonossonAdapter implements SourceAdapter {
-  readonly id = "yehud-monosson";
-  private readonly fetcher: Fetcher;
-
-  constructor(fetcher: Fetcher = fetch) { this.fetcher = fetcher; }
-
-  async discover(context: SourceResearchContext) {
-    const terms = buildMunicipalSearchTerms(context);
-    const discoveries = new Map<string, SourceDiscoveryResult>();
-
-    for (const term of terms) {
-      const endpoint = new URL("https://yehud-monosson.muni.il/wp-json/wp/v2/search");
-      endpoint.searchParams.set("search", term.value);
-      endpoint.searchParams.set("per_page", "20");
-      endpoint.searchParams.set("type", "post");
-      endpoint.searchParams.set("_fields", "id,title,url,type,subtype");
-      const response = await this.fetcher(endpoint, {
-        headers: { Accept: "application/json", "User-Agent": "DiraTrack/0.1 research-worker" },
-        signal: AbortSignal.timeout(20_000),
-      });
-
-      if (response.status === 403 || response.status === 429) {
-        throw new ManualActionRequiredError({
-          title: "נדרשת בדיקה ידנית באתר עיריית יהוד־מונוסון",
-          description: `האתר העירוני חסם זמנית את החיפוש האוטומטי. יש לפתוח את האתר הרשמי ולחפש את „${term.value}”.`,
-          url: "https://yehud-monosson.muni.il/",
-          searchValue: term.value,
-        });
-      }
-      if (!response.ok) throw new Error(`Yehud-Monosson search failed with HTTP ${response.status}`);
-
-      const results = await response.json() as unknown;
-      if (!Array.isArray(results)) throw new Error("Yehud-Monosson search returned an invalid response");
-
-      for (const result of results) {
-        if (!isWordPressSearchResult(result) || result.type !== "post" || !isOfficialMunicipalUrl(result.url)) continue;
-        const key = String(result.id);
-        const existing = discoveries.get(key);
-        const matchingIdentifiers = term.identifier ? [...(existing?.matchingIdentifiers ?? []), term.identifier] : (existing?.matchingIdentifiers ?? []);
-        discoveries.set(key, {
-          externalId: key,
-          title: decodeBasicHtmlEntities(result.title),
-          sourceUrl: result.url,
-          summary: `החיפוש באתר עיריית יהוד־מונוסון החזיר את העמוד עבור „${term.label}”. יש לפתוח את המקור ולאמת את הקשר לפרויקט.`,
-          matchingIdentifiers: uniqueIdentifiers(matchingIdentifiers),
-          metadata: {
-            provider: "wordpress-rest-api",
-            matchedTerms: [...new Set([...(existing?.metadata.matchedTerms as string[] | undefined ?? []), term.label])],
-            type: result.type,
-            subtype: result.subtype,
-          },
-        });
-      }
-    }
-
-    return [...discoveries.values()];
   }
 }
 
@@ -186,12 +122,13 @@ export function getSourceAdapter(sourceKey: string): SourceAdapter | null {
 
   if (sourceKey === "asia-cyrus") return new AsiaCyrusAdapter(fetcher);
   if (sourceKey === "discounted-housing") return new DiscountedHousingAdapter();
+  if (sourceKey === "yehud-local-planning") return new YehudLocalPlanningAdapter();
   if (sourceKey === "yehud-monosson") return new YehudMonossonAdapter(fetcher);
   return null;
 }
 
 export function sourceRequiresManualAction(sourceKey: string) {
-  return sourceKey === "discounted-housing";
+  return sourceKey === "discounted-housing" || sourceKey === "yehud-local-planning";
 }
 
 export function sourceSendsExternalData(sourceKey: string) {
@@ -207,33 +144,6 @@ function buildSearchTerms(context: SourceResearchContext) {
     if (value) terms.push({ value, label: `${identifierTypeLabel(identifier.type)} ${value}`, identifier: { type: identifier.type, value } });
   }
   return terms.filter((term, index, all) => all.findIndex((candidate) => candidate.value === term.value) === index);
-}
-
-function buildMunicipalSearchTerms(context: SourceResearchContext) {
-  const terms: Array<{ value: string; label: string; identifier?: ResearchIdentifier }> = [];
-  const projectName = context.project.name.trim();
-  const developer = context.project.developer?.trim();
-  if (projectName && !/^פרויקט(?:\s+\d+)?$/u.test(projectName)) terms.push({ value: projectName, label: `שם הפרויקט: ${projectName}` });
-  if (developer) terms.push({ value: developer, label: `יזם: ${developer}` });
-
-  const allowedIdentifiers = new Set(["block", "parcel", "lot", "plan-number", "tender-number", "permit-request-number", "lottery-number"]);
-  for (const identifier of context.identifiers) {
-    const value = identifier.value.trim();
-    if (!value || !allowedIdentifiers.has(identifier.type)) continue;
-    const normalized = { type: identifier.type, value };
-    const searchValue = `${identifierTypeLabel(identifier.type)} ${value}`;
-    terms.push({ value: searchValue, label: searchValue, identifier: normalized });
-  }
-
-  return terms.filter((term, index, all) => all.findIndex((candidate) => candidate.value === term.value) === index).slice(0, 10);
-}
-
-function isOfficialMunicipalUrl(value: string) {
-  try {
-    return new URL(value).origin === "https://yehud-monosson.muni.il";
-  } catch {
-    return false;
-  }
 }
 
 function isWordPressSearchResult(value: unknown): value is WordPressSearchResult {
