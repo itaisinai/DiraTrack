@@ -13,11 +13,19 @@ export function isLiveApiMode(): boolean {
   return process.env.LIVE_API_TESTS === "1";
 }
 
+interface MockWordPressSearchResult {
+  id: number;
+  title: string;
+  url: string;
+  type: string;
+  subtype: string;
+}
+
 /**
  * Mock response for Asia Cyrus WordPress API
  * Returns realistic mock data for testing
  */
-export function getMockAsiaCyrusResponse(searchTerm: string): any[] {
+export function getMockAsiaCyrusResponse(searchTerm: string): MockWordPressSearchResult[] {
   // Return one mock result for Asia Cyrus searches
   return [
     {
@@ -83,8 +91,8 @@ export function createMockServer() {
   const mockFetch = createMockFetch();
 
   return {
-    listen: (_options?: any) => {
-      global.fetch = mockFetch as any;
+    listen: (_options?: { onUnhandledRequest?: string }) => {
+      global.fetch = mockFetch as typeof fetch;
       console.log("[Mock Server] Mock mode enabled - all external APIs mocked");
     },
     close: () => {

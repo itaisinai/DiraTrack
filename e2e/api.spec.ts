@@ -302,7 +302,7 @@ test.describe("API - Manual Action Resolution", () => {
       `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
     );
     const runData = await runResponse.json();
-    const check = runData.sourceChecks.find((c: any) => c.source.key === "discounted-housing");
+    const check = runData.sourceChecks.find((c: { id: string; source: { key: string } }) => c.source.key === "discounted-housing");
 
     await waitForSourceCheckStatus(
       request,
@@ -337,7 +337,7 @@ test.describe("API - Manual Action Resolution", () => {
       `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
     );
     const runData = await runResponse.json();
-    const check = runData.sourceChecks.find((c: any) => c.source.key === "discounted-housing");
+    const check = runData.sourceChecks.find((c: { id: string; source: { key: string } }) => c.source.key === "discounted-housing");
 
     await waitForSourceCheckStatus(
       request,
@@ -377,7 +377,7 @@ test.describe("API - Manual Action Resolution", () => {
       `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
     );
     const runData = await runResponse.json();
-    const check = runData.sourceChecks.find((c: any) => c.source.key === "discounted-housing");
+    const check = runData.sourceChecks.find((c: { id: string; source: { key: string } }) => c.source.key === "discounted-housing");
 
     await waitForSourceCheckStatus(
       request,
@@ -406,56 +406,61 @@ test.describe("API - Manual Action Resolution", () => {
     const testId = generateTestId();
     const { project } = await createTestProject(request, { testId });
 
-    const { researchRun } = await startTestResearchRun(request, project.currentSlug, {
-      sourceKeys: ["asia-cyrus"],
-    });
+    try {
+      const { researchRun } = await startTestResearchRun(request, project.currentSlug, {
+        sourceKeys: ["asia-cyrus"],
+      });
 
-    // Wait for research to complete first
-    await waitForResearchRunComplete(request, project.currentSlug, researchRun.id);
+      // Wait for research to complete first
+      await waitForResearchRunComplete(request, project.currentSlug, researchRun.id);
 
-    // Now force the source check to fail deterministically
-    const { checkId, error: originalError } = await forceSourceCheckToFail(
-      request,
-      project.currentSlug,
-      researchRun.id,
-      "asia-cyrus"
-    );
+      // Now force the source check to fail deterministically
+      const { checkId, error: originalError } = await forceSourceCheckToFail(
+        request,
+        project.currentSlug,
+        researchRun.id,
+        "asia-cyrus"
+      );
 
-    // Verify the check is in failed state before retry
-    const preRetryResponse = await request.get(
-      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
-    );
-    expect(preRetryResponse.status()).toBe(200);
-    const preRetryData = await preRetryResponse.json();
-    const preRetryCheck = preRetryData.sourceChecks.find((c: any) => c.id === checkId);
-    expect(preRetryCheck.status).toBe("failed");
-    expect(preRetryCheck.error).toBe(originalError);
+      // Verify the check is in failed state before retry
+      const preRetryResponse = await request.get(
+        `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
+      );
+      expect(preRetryResponse.status()).toBe(200);
+      const preRetryData = await preRetryResponse.json();
+      const preRetryCheck = preRetryData.sourceChecks.find((c: { id: string; status: string; error: string | null }) => c.id === checkId);
+      expect(preRetryCheck.status).toBe("failed");
+      expect(preRetryCheck.error).toBe(originalError);
 
-    // Retry the failed check
-    const retryResponse = await request.post(
-      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}/source-checks/${checkId}/retry`
-    );
+      // Retry the failed check
+      const retryResponse = await request.post(
+        `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}/source-checks/${checkId}/retry`
+      );
 
-    // Verify retry API response
-    expect(retryResponse.status()).toBe(202);
-    const retryData = await retryResponse.json();
-    expect(retryData).toHaveProperty("check");
-    expect(retryData.check.id).toBe(checkId);
+      // Verify retry API response
+      expect(retryResponse.status()).toBe(202);
+      const retryData = await retryResponse.json();
+      expect(retryData).toHaveProperty("check");
+      expect(retryData.check.id).toBe(checkId);
 
-    // Verify the check transitions from failed to pending/queued
-    const postRetryCheck = retryData.check;
-    expect(postRetryCheck.status).toBe("pending");
-    expect(postRetryCheck.error).toBeNull();
+      // Verify the check transitions from failed to pending/queued
+      const postRetryCheck = retryData.check;
+      expect(postRetryCheck.status).toBe("pending");
+      expect(postRetryCheck.error).toBeNull();
 
-    // Verify check belongs to the requested project and research run
-    const postRetryResponse = await request.get(
-      `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
-    );
-    const postRetryRunData = await postRetryResponse.json();
-    const finalCheck = postRetryRunData.sourceChecks.find((c: any) => c.id === checkId);
-    expect(finalCheck).toBeTruthy();
-    expect(finalCheck.status).toBe("pending");
-    expect(finalCheck.error).toBeNull();
+      // Verify check belongs to the requested project and research run
+      const postRetryResponse = await request.get(
+        `/api/projects/${encodeURIComponent(project.currentSlug)}/research-runs/${researchRun.id}`
+      );
+      const postRetryRunData = await postRetryResponse.json();
+      const finalCheck = postRetryRunData.sourceChecks.find((c: { id: string; status: string; error: string | null }) => c.id === checkId);
+      expect(finalCheck).toBeTruthy();
+      expect(finalCheck.status).toBe("pending");
+      expect(finalCheck.error).toBeNull();
+    } finally {
+      // Explicitly clean up test project and related data
+      await cleanupTestData(testId);
+    }
   });
 });
 
@@ -671,11 +676,13 @@ test.describe("API - Live Integration", () => {
 
       // Verify we got actual results
       const asiaCyrusCheck = data.sourceChecks.find(
-        (c: any) => c.source.key === "asia-cyrus"
+        (c: { source: { key: string }; status: string }) => c.source.key === "asia-cyrus"
       );
       expect(asiaCyrusCheck).toBeTruthy();
       expect(asiaCyrusCheck.status).toBe("results-found");
     } finally {
+      // Clean up test project and related data
+      await cleanupTestData(testId);
       // Re-enable mocks
       mockServer.listen();
     }

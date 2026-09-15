@@ -6,6 +6,32 @@ import postgres from "postgres";
 import { getTestDatabaseUrl } from "./test-database-guard";
 
 /**
+ * Minimal test DTOs for type safety
+ * These match API response structures used in tests
+ */
+interface TestProject {
+  id: string;
+  name: string;
+  city: string;
+  currentSlug: string;
+}
+
+interface TestResearchRun {
+  id: string;
+  status: string;
+}
+
+interface TestSourceCheck {
+  id: string;
+  status: string;
+  error: string | null;
+  source: {
+    key: string;
+    name: string;
+  };
+}
+
+/**
  * Generate a unique test identifier for this test run
  */
 export function generateTestId(): string {
@@ -151,7 +177,7 @@ export async function waitForSourceCheckStatus(
     expect(response.ok()).toBeTruthy();
     const data = await response.json();
 
-    const check = data.sourceChecks.find((c: any) => c.id === checkId);
+    const check = data.sourceChecks.find((c: TestSourceCheck) => c.id === checkId);
     expect(check).toBeTruthy();
     expect(statuses).toContain(check.status);
   }).toPass({
@@ -172,7 +198,7 @@ export async function createTestProject(
     identifiers?: Array<{ type: string; value: string; origin?: string }>;
     testId?: string;
   } = {}
-): Promise<{ project: any }> {
+): Promise<{ project: TestProject }> {
   const testId = options.testId ?? generateTestId();
 
   // Ensure all identifiers have an origin field (required by API)
@@ -204,7 +230,7 @@ export async function startTestResearchRun(
     sourceKeys?: string[];
     externalDataConsent?: boolean;
   } = {}
-): Promise<{ researchRun: any }> {
+): Promise<{ researchRun: TestResearchRun }> {
   const response = await request.post(
     `/api/projects/${encodeURIComponent(projectSlug)}/research-runs`,
     {
@@ -254,7 +280,7 @@ export async function forceSourceCheckToFail(
   expect(runResponse.status()).toBe(200);
   const runData = await runResponse.json();
 
-  const check = runData.sourceChecks.find((c: any) => c.source.key === sourceKey);
+  const check = runData.sourceChecks.find((c: TestSourceCheck) => c.source.key === sourceKey);
   expect(check).toBeTruthy();
 
   // Verify the check exists in the database
@@ -280,9 +306,6 @@ export async function forceSourceCheckToFail(
 
   expect(result.length).toBe(1);
   expect(result[0].status).toBe("failed");
-
-  // Small delay to ensure the update is visible across connections
-  await new Promise(resolve => setTimeout(resolve, 200));
 
   return {
     checkId: check.id,
