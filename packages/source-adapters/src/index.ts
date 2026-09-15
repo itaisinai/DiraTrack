@@ -1,8 +1,12 @@
 import { type Fetcher, ManualActionRequiredError, type ResearchIdentifier, type SourceAdapter, type SourceDiscoveryResult, type SourceResearchContext } from "./types.ts";
+import { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
+import { PlanningAdministrationAdapter } from "./planning-administration.ts";
 import { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
 import { YehudMonossonAdapter } from "./yehud-monosson.ts";
 
 export * from "./types.ts";
+export { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
+export { PlanningAdministrationAdapter } from "./planning-administration.ts";
 export { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
 export { YehudMonossonAdapter } from "./yehud-monosson.ts";
 
@@ -122,13 +126,15 @@ export function getSourceAdapter(sourceKey: string): SourceAdapter | null {
 
   if (sourceKey === "asia-cyrus") return new AsiaCyrusAdapter(fetcher);
   if (sourceKey === "discounted-housing") return new DiscountedHousingAdapter();
+  if (sourceKey === "israel-land-authority") return new IsraelLandAuthorityAdapter();
+  if (sourceKey === "planning-administration") return new PlanningAdministrationAdapter();
   if (sourceKey === "yehud-local-planning") return new YehudLocalPlanningAdapter();
   if (sourceKey === "yehud-monosson") return new YehudMonossonAdapter(fetcher);
   return null;
 }
 
 export function sourceRequiresManualAction(sourceKey: string) {
-  return sourceKey === "discounted-housing" || sourceKey === "yehud-local-planning";
+  return sourceKey === "discounted-housing" || sourceKey === "israel-land-authority" || sourceKey === "planning-administration" || sourceKey === "yehud-local-planning";
 }
 
 export function sourceSendsExternalData(sourceKey: string) {

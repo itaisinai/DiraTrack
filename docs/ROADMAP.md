@@ -12,9 +12,12 @@ This document describes the complete path from the current MVP to a fully-featur
 - **Data Model**: Complete schema for projects, sources, research runs, findings, documents, timeline, tasks
 - **Project Isolation**: Strong database-level project scoping
 - **Research Orchestration**: Explicit research runs, job queue, worker polling, cancellation
-- **Two Source Adapters**:
-  - **Asia Cyrus** (automatic): WordPress API search
+- **Five Source Adapters**:
+  - **Asia Cyrus** (automatic): WordPress API search, requires external-data consent
+  - **Yehud-Monosson Municipality** (automatic): WordPress API search, requires external-data consent
   - **Dira BeHanacha** (manual): Creates manual-action state with instructions
+  - **Israel Land Authority** (manual): Directs to official tender/lot/parcel search
+  - **Planning Administration** (manual): Directs to official plan search
 - **Finding Review**: Mark relevant/irrelevant, audit events
 - **Basic E2E Tests**: Playwright infrastructure added
 
@@ -170,36 +173,42 @@ This document describes the complete path from the current MVP to a fully-featur
 
 **Goal**: Connect 5 additional official and municipal sources
 
-### Sources to Add
+**Status**: ✅ **3 of 5 completed** (Israel Land Authority, Planning Administration, and Yehud-Monosson completed in PR #17 and feat/government-manual-sources)
 
-#### 2.1 Israel Land Authority
-- **URL**: `https://www.gov.il/he/departments/israel_land_authority`
-- **Search Strategy**: Project name, city, block/parcel/lot
-- **Type**: Manual (requires navigation and CAPTCHA)
-- **Manual Action**: Link to tender search with identifiers displayed
+### Sources Completed
 
-#### 2.2 Planning Administration (מינהל התכנון)
-- **URL**: `https://www.gov.il/he/departments/iplan`
-- **Search Strategy**: Plan number, city, block/parcel
-- **Type**: Manual (complex navigation)
-- **Manual Action**: Link to plan search with identifiers
+#### ✅ 2.1 Israel Land Authority
+- **URL**: `https://www.gov.il/he/departments/israel_land_authority/govil-landing-page`
+- **Search Strategy**: Tender number → Lot → Block/parcel → Housing project number → Project name + city
+- **Type**: Manual (requires browser navigation)
+- **Implementation**: ✅ Creates manual action with search identifiers
+
+#### ✅ 2.2 Planning Administration (מינהל התכנון)
+- **URL**: `https://www.gov.il/he/departments/iplan/govil-landing-page`
+- **Search Strategy**: Plan number → Block/parcel → Permit request number → City
+- **Type**: Manual (requires browser navigation)
+- **Implementation**: ✅ Creates manual action with search identifiers
+
+#### ✅ 2.4 Yehud-Monosson Municipality
+- **URL**: `https://www.yehud-monosson.muni.il`
+- **Search Strategy**: Project name, developer, identifiers (block, parcel, plan, tender, etc.)
+- **Type**: Automatic (WordPress API with fallback to manual on rate-limit)
+- **Implementation**: ✅ WordPress REST API search with rate-limit handling (PR #17)
+
+### Sources Remaining
 
 #### 2.3 Yehud Local Planning Committee
 - **URL**: `https://yehud.bartech-net.co.il`
 - **Search Strategy**: Address, block/parcel, plan number
 - **Type**: Investigate (may have API or require scraping)
 - **Fallback**: Manual with link
+- **Status**: 🔜 Planned for separate PR
 
-#### 2.4 Yehud-Monosson Municipality
-- **URL**: `https://www.yehud-monosson.muni.il`
-- **Search Strategy**: Address, project name
-- **Type**: Investigate (may have news feed or announcements API)
-- **Fallback**: Manual with link
-
-#### 2.5 Developer Website Adapter
+#### 2.5 Developer Website Adapter Framework
 - **Type**: Pluggable per-developer strategy
 - **Current**: Asia Cyrus (already implemented)
 - **Framework**: Generic developer adapter interface
+- **Status**: 🔜 Planned for future enhancement
 
 ### Per-Source Requirements
 - [ ] Stable source key in catalog
