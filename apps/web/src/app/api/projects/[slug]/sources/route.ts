@@ -6,7 +6,7 @@ import {
   projectSources,
   sources,
 } from "@diratrack/database";
-import { getSourceAdapter, mvpSourceCatalog } from "@diratrack/source-adapters";
+import { getSourceAdapter, mvpSourceCatalog, sourceRequiresManualAction, sourceSendsExternalData } from "@diratrack/source-adapters";
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
@@ -40,8 +40,8 @@ export async function GET(_request: Request, context: Context) {
     const adapter = row.adapterKey ? getSourceAdapter(row.sourceKey as string) : null;
     const isImplemented = adapter !== null;
 
-    const requiresManualAction = row.sourceKey === "discounted-housing";
-    const sendsExternalData = row.sourceKey === "asia-cyrus";
+    const requiresManualAction = sourceRequiresManualAction(row.sourceKey);
+    const sendsExternalData = sourceSendsExternalData(row.sourceKey);
 
     return {
       key: row.sourceKey,
@@ -117,8 +117,8 @@ export async function PATCH(request: Request, context: Context) {
 
   const adapter = result.adapterKey ? getSourceAdapter(result.sourceKey as string) : null;
   const isImplemented = adapter !== null;
-  const requiresManualAction = result.sourceKey === "discounted-housing";
-  const sendsExternalData = result.sourceKey === "asia-cyrus";
+  const requiresManualAction = sourceRequiresManualAction(result.sourceKey);
+  const sendsExternalData = sourceSendsExternalData(result.sourceKey);
 
   return NextResponse.json({
     source: {

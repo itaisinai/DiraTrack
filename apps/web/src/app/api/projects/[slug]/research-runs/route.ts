@@ -6,7 +6,7 @@ import {
   listResearchRuns,
   startResearchRun,
 } from "@diratrack/database";
-import { mvpSourceCatalog } from "@diratrack/source-adapters";
+import { mvpSourceCatalog, sourceSendsExternalData } from "@diratrack/source-adapters";
 import { NextResponse } from "next/server";
 
 type Context = { params: Promise<{ slug: string }> };
@@ -29,9 +29,8 @@ export async function POST(request: Request, context: Context) {
     return NextResponse.json({ error: "Unknown source keys", unknownSourceKeys }, { status: 400 });
   }
 
-  const sourcesThatRequireConsent = ["asia-cyrus"];
   const effectiveSourceKeys = body.sourceKeys ?? mvpSourceCatalog.map((s) => s.key);
-  const requiresConsent = effectiveSourceKeys.some((key) => sourcesThatRequireConsent.includes(key));
+  const requiresConsent = effectiveSourceKeys.some((key) => sourceSendsExternalData(key));
 
   if (requiresConsent && body.externalDataConsent !== true) {
     return NextResponse.json({ error: "Explicit consent is required before sending project data to an external source" }, { status: 400 });
