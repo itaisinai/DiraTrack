@@ -80,3 +80,10 @@ test("fails safely on server and invalid response errors", async (t) => {
 test("registers the municipality source adapter", () => {
   assert.ok(getSourceAdapter("yehud-monosson") instanceof YehudMonossonAdapter);
 });
+
+test("marks the municipal adapter as sending external data", async () => {
+  const { sourceSendsExternalData } = await import("./index.ts");
+  assert.equal(sourceSendsExternalData("yehud-monosson"), true);
+  assert.equal(sourceSendsExternalData("asia-cyrus"), true);
+  assert.equal(sourceSendsExternalData("discounted-housing"), false);
+});

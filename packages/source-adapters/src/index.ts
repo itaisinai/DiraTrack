@@ -195,7 +195,7 @@ export function sourceRequiresManualAction(sourceKey: string) {
 }
 
 export function sourceSendsExternalData(sourceKey: string) {
-  return sourceKey === "asia-cyrus";
+  return sourceKey === "asia-cyrus" || sourceKey === "yehud-monosson";
 }
 
 function buildSearchTerms(context: SourceResearchContext) {
