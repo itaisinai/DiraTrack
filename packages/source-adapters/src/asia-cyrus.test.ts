@@ -25,10 +25,18 @@ test("searches the live source using project data and keeps evidence unverified"
   assert.match(results[0]?.summary ?? "", /לפתוח את המקור ולאמת/);
 });
 
-test("fails explicitly when the source does not return a successful response", async () => {
-  const adapter = new AsiaCyrusAdapter(async () => new Response("unavailable", { status: 503 }));
+test("retries transient failures and eventually fails", async () => {
+  let attemptCount = 0;
+  const adapter = new AsiaCyrusAdapter(async () => {
+    attemptCount++;
+    return new Response("unavailable", { status: 503 });
+  });
+
   await assert.rejects(
     adapter.discover({ project: { name: "פרויקט", city: "עיר", developer: null }, identifiers: [] }),
-    /HTTP 503/,
+    /Asia Cyrus search failed with HTTP 503/,
   );
+
+  // Should have retried 3 times (max attempts from DEFAULT_RETRY_POLICY)
+  assert.equal(attemptCount, 3);
 });

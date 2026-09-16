@@ -3,11 +3,13 @@ import { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
 import { PlanningAdministrationAdapter } from "./planning-administration.ts";
 import { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
 import { YehudMonossonAdapter } from "./yehud-monosson.ts";
-import { createDefaultCapability, type SourceCapability, type SourceImplementationMode } from "./source-health.ts";
+import { createDefaultCapability, DEFAULT_RETRY_POLICY, type RetryPolicy, type SourceCapability, type SourceImplementationMode } from "./source-health.ts";
+import { withRetry } from "./retry.ts";
 
 export * from "./types.ts";
 export * from "./source-health.ts";
 export * from "./health-check.ts";
+export * from "./retry.ts";
 export { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
 export { PlanningAdministrationAdapter } from "./planning-administration.ts";
 export { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
@@ -30,8 +32,12 @@ interface WordPressSearchResult { id: number; title: string; url: string; type: 
 export class AsiaCyrusAdapter implements SourceAdapter {
   readonly id = "asia-cyrus";
   private readonly fetcher: Fetcher;
+  private readonly retryPolicy: RetryPolicy;
 
-  constructor(fetcher: Fetcher = fetch) { this.fetcher = fetcher; }
+  constructor(fetcher: Fetcher = fetch, retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY) {
+    this.fetcher = fetcher;
+    this.retryPolicy = retryPolicy;
+  }
 
   async discover(context: SourceResearchContext) {
     const terms = buildSearchTerms(context);
@@ -41,8 +47,26 @@ export class AsiaCyrusAdapter implements SourceAdapter {
       const endpoint = new URL("https://asia-cyrus.co.il/wp-json/wp/v2/search");
       endpoint.searchParams.set("search", term.value);
       endpoint.searchParams.set("per_page", "20");
-      const response = await this.fetcher(endpoint, { headers: { Accept: "application/json", "User-Agent": "DiraTrack/0.1 research-worker" }, signal: AbortSignal.timeout(20_000) });
-      if (!response.ok) throw new Error(`Asia Cyrus search failed with HTTP ${response.status}`);
+
+      // Use withRetry with fresh timeout per attempt
+      let response: Response;
+      try {
+        response = await withRetry(async () => {
+          const resp = await this.fetcher(endpoint, {
+            headers: { Accept: "application/json", "User-Agent": "DiraTrack/0.1 research-worker" },
+            signal: AbortSignal.timeout(20_000), // Fresh signal per retry
+          });
+          if (!resp.ok) throw resp;
+          return resp;
+        }, this.retryPolicy);
+      } catch (error) {
+        // Convert Response errors to Error with descriptive message
+        if (error instanceof Response) {
+          throw new Error(`Asia Cyrus search failed with HTTP ${error.status}`);
+        }
+        throw error;
+      }
+
       const results = await response.json() as WordPressSearchResult[];
 
       for (const result of results) {
