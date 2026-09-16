@@ -12,6 +12,11 @@ export interface SourceMetadata {
   sendsExternalData: boolean;
   lastCheckedAt: string | null;
   lastResultStatus: "success" | "partial" | "failed" | "manual" | null;
+  healthStatus?: "healthy" | "degraded" | "unavailable" | "manual-only" | "not-checked" | null;
+  lastHealthCheckAt?: string | null;
+  lastErrorCategory?: string | null;
+  lastErrorMessage?: string | null;
+  recoveryAction?: string | null;
 }
 
 interface SourceSelectionDialogProps {
@@ -101,6 +106,27 @@ export function SourceSelectionDialog({
       return <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">דורש פעולה ידנית</span>;
     }
     return <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">אוטומטי</span>;
+  }
+
+  function getHealthBadge(source: SourceMetadata) {
+    if (!source.healthStatus) return null;
+
+    const badges = {
+      healthy: { label: "תקין", className: "bg-emerald-100 text-emerald-800", icon: "✓" },
+      degraded: { label: "מוגבל", className: "bg-amber-100 text-amber-800", icon: "⚠" },
+      unavailable: { label: "לא זמין", className: "bg-red-100 text-red-800", icon: "✗" },
+      "manual-only": { label: "ידני בלבד", className: "bg-blue-100 text-blue-800", icon: "👤" },
+      "not-checked": { label: "לא נבדק", className: "bg-slate-100 text-slate-600", icon: "○" },
+    };
+
+    const badge = badges[source.healthStatus];
+    if (!badge) return null;
+
+    return (
+      <span className={`rounded px-2 py-0.5 text-xs ${badge.className}`}>
+        {badge.icon} {badge.label}
+      </span>
+    );
   }
 
   function getLastCheckStatus(source: SourceMetadata) {
@@ -220,12 +246,18 @@ export function SourceSelectionDialog({
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-semibold">{source.name}</span>
                               {getCapabilityBadge(source)}
+                              {getHealthBadge(source)}
                               {source.sendsExternalData && (
                                 <span className="rounded bg-orange-100 px-2 py-0.5 text-xs text-orange-800">
                                   שולח נתונים החוצה
                                 </span>
                               )}
                             </div>
+                            {source.recoveryAction && (
+                              <div className="text-xs text-amber-700">
+                                {source.recoveryAction}
+                              </div>
+                            )}
                             {getLastCheckStatus(source)}
                           </div>
                         </label>

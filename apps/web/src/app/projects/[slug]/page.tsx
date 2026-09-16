@@ -28,7 +28,37 @@ function ProjectPage() {
   useEffect(() => {
     fetch(`/api/projects/${encodedSlug}`).then(async (response) => { if (!response.ok) throw new Error("הפרויקט לא נמצא"); return response.json(); }).then(setData).catch((caught) => setError(caught instanceof Error ? caught.message : "לא ניתן לטעון את הפרויקט"));
     void loadRuns();
-    fetch(`/api/projects/${encodedSlug}/sources`).then((response) => response.ok ? response.json() : Promise.reject()).then((result: { sources: SourceMetadata[] }) => setSources(result.sources)).catch(() => undefined);
+
+    // Fetch sources and merge with health data
+    Promise.all([
+      fetch(`/api/projects/${encodedSlug}/sources`).then((r) => r.ok ? r.json() : Promise.reject()),
+      fetch(`/api/sources/health`).then((r) => r.ok ? r.json() : Promise.reject()),
+    ])
+      .then(([sourcesResult, healthResult]: [
+        { sources: SourceMetadata[] },
+        { sources: Array<{
+          key: string;
+          healthStatus: "healthy" | "degraded" | "unavailable" | "manual-only" | "not-checked";
+          lastHealthCheckAt: string | null;
+          lastErrorCategory: string | null;
+          lastErrorMessage: string | null;
+          recoveryAction: string | null;
+        }> }
+      ]) => {
+        const healthMap = new Map(healthResult.sources.map((h) => [h.key, h]));
+        const mergedSources = sourcesResult.sources.map((source) => {
+          const health = healthMap.get(source.key);
+          return health ? { ...source, ...health } : source;
+        });
+        setSources(mergedSources);
+      })
+      .catch(() => {
+        // Fallback: fetch just sources if health fails
+        fetch(`/api/projects/${encodedSlug}/sources`)
+          .then((r) => r.ok ? r.json() : Promise.reject())
+          .then((result: { sources: SourceMetadata[] }) => setSources(result.sources))
+          .catch(() => undefined);
+      });
   }, [encodedSlug, loadRuns]);
   useEffect(() => {
     if (!runs[0] || !["pending", "running"].includes(runs[0].status)) return;
