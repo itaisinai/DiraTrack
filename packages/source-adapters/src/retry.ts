@@ -6,6 +6,7 @@
  */
 
 import { type RetryPolicy, calculateRetryDelay, shouldRetryStatus } from "./source-health.ts";
+import { ManualActionRequiredError } from "./types.ts";
 
 /**
  * Error thrown when max retry attempts are exhausted
@@ -65,6 +66,15 @@ function evaluateRetry<T>(
   attempt: number,
   policy: RetryPolicy,
 ): RetryAttemptResult<T> {
+  // ManualActionRequiredError should never be retried
+  if (error instanceof ManualActionRequiredError) {
+    return {
+      success: false,
+      error,
+      shouldRetry: false,
+    };
+  }
+
   // If it's a Response (from fetch), check status code
   if (error instanceof Response) {
     const shouldRetry = shouldRetryStatus(error.status, policy);
@@ -132,8 +142,9 @@ export async function withRetry<T>(
       }
 
       if (attempt < policy.maxAttempts) {
-        // Calculate delay (prefer Retry-After if available)
-        const delay = evaluation.retryAfterMs ?? calculateRetryDelay(attempt, policy);
+        // Calculate delay (prefer Retry-After if available, but cap at maxDelayMs)
+        const calculatedDelay = evaluation.retryAfterMs ?? calculateRetryDelay(attempt, policy);
+        const delay = Math.min(calculatedDelay, policy.maxDelayMs);
         await sleep(delay);
       }
     }

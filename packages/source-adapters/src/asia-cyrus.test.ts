@@ -34,7 +34,7 @@ test("retries transient failures and eventually fails", async () => {
 
   await assert.rejects(
     adapter.discover({ project: { name: "פרויקט", city: "עיר", developer: null }, identifiers: [] }),
-    (error: unknown) => error instanceof Response && error.status === 503,
+    /Asia Cyrus search failed with HTTP 503/,
   );
 
   // Should have retried 3 times (max attempts from DEFAULT_RETRY_POLICY)

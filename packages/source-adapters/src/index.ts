@@ -3,8 +3,8 @@ import { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
 import { PlanningAdministrationAdapter } from "./planning-administration.ts";
 import { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
 import { YehudMonossonAdapter } from "./yehud-monosson.ts";
-import { createDefaultCapability, DEFAULT_RETRY_POLICY, type SourceCapability, type SourceImplementationMode } from "./source-health.ts";
-import { createRetryFetcher } from "./retry.ts";
+import { createDefaultCapability, DEFAULT_RETRY_POLICY, type RetryPolicy, type SourceCapability, type SourceImplementationMode } from "./source-health.ts";
+import { withRetry } from "./retry.ts";
 
 export * from "./types.ts";
 export * from "./source-health.ts";
@@ -32,10 +32,11 @@ interface WordPressSearchResult { id: number; title: string; url: string; type: 
 export class AsiaCyrusAdapter implements SourceAdapter {
   readonly id = "asia-cyrus";
   private readonly fetcher: Fetcher;
+  private readonly retryPolicy: RetryPolicy;
 
-  constructor(fetcher: Fetcher = fetch) {
-    // Wrap fetcher with retry logic using default policy
-    this.fetcher = createRetryFetcher(fetcher, DEFAULT_RETRY_POLICY);
+  constructor(fetcher: Fetcher = fetch, retryPolicy: RetryPolicy = DEFAULT_RETRY_POLICY) {
+    this.fetcher = fetcher;
+    this.retryPolicy = retryPolicy;
   }
 
   async discover(context: SourceResearchContext) {
@@ -46,9 +47,26 @@ export class AsiaCyrusAdapter implements SourceAdapter {
       const endpoint = new URL("https://asia-cyrus.co.il/wp-json/wp/v2/search");
       endpoint.searchParams.set("search", term.value);
       endpoint.searchParams.set("per_page", "20");
-      // Fetcher now has retry logic - will automatically retry on transient failures
-      const response = await this.fetcher(endpoint, { headers: { Accept: "application/json", "User-Agent": "DiraTrack/0.1 research-worker" }, signal: AbortSignal.timeout(20_000) });
-      // Response.ok is guaranteed here due to retry wrapper
+
+      // Use withRetry with fresh timeout per attempt
+      let response: Response;
+      try {
+        response = await withRetry(async () => {
+          const resp = await this.fetcher(endpoint, {
+            headers: { Accept: "application/json", "User-Agent": "DiraTrack/0.1 research-worker" },
+            signal: AbortSignal.timeout(20_000), // Fresh signal per retry
+          });
+          if (!resp.ok) throw resp;
+          return resp;
+        }, this.retryPolicy);
+      } catch (error) {
+        // Convert Response errors to Error with descriptive message
+        if (error instanceof Response) {
+          throw new Error(`Asia Cyrus search failed with HTTP ${error.status}`);
+        }
+        throw error;
+      }
+
       const results = await response.json() as WordPressSearchResult[];
 
       for (const result of results) {
