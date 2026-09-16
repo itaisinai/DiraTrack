@@ -3,11 +3,13 @@ import { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
 import { PlanningAdministrationAdapter } from "./planning-administration.ts";
 import { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
 import { YehudMonossonAdapter } from "./yehud-monosson.ts";
-import { createDefaultCapability, type SourceCapability, type SourceImplementationMode } from "./source-health.ts";
+import { createDefaultCapability, DEFAULT_RETRY_POLICY, type SourceCapability, type SourceImplementationMode } from "./source-health.ts";
+import { createRetryFetcher } from "./retry.ts";
 
 export * from "./types.ts";
 export * from "./source-health.ts";
 export * from "./health-check.ts";
+export * from "./retry.ts";
 export { IsraelLandAuthorityAdapter } from "./israel-land-authority.ts";
 export { PlanningAdministrationAdapter } from "./planning-administration.ts";
 export { YehudLocalPlanningAdapter } from "./yehud-local-planning.ts";
@@ -31,7 +33,10 @@ export class AsiaCyrusAdapter implements SourceAdapter {
   readonly id = "asia-cyrus";
   private readonly fetcher: Fetcher;
 
-  constructor(fetcher: Fetcher = fetch) { this.fetcher = fetcher; }
+  constructor(fetcher: Fetcher = fetch) {
+    // Wrap fetcher with retry logic using default policy
+    this.fetcher = createRetryFetcher(fetcher, DEFAULT_RETRY_POLICY);
+  }
 
   async discover(context: SourceResearchContext) {
     const terms = buildSearchTerms(context);
@@ -41,8 +46,9 @@ export class AsiaCyrusAdapter implements SourceAdapter {
       const endpoint = new URL("https://asia-cyrus.co.il/wp-json/wp/v2/search");
       endpoint.searchParams.set("search", term.value);
       endpoint.searchParams.set("per_page", "20");
+      // Fetcher now has retry logic - will automatically retry on transient failures
       const response = await this.fetcher(endpoint, { headers: { Accept: "application/json", "User-Agent": "DiraTrack/0.1 research-worker" }, signal: AbortSignal.timeout(20_000) });
-      if (!response.ok) throw new Error(`Asia Cyrus search failed with HTTP ${response.status}`);
+      // Response.ok is guaranteed here due to retry wrapper
       const results = await response.json() as WordPressSearchResult[];
 
       for (const result of results) {
