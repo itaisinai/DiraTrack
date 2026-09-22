@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface DocumentPreview {
   url: string;
@@ -15,12 +15,23 @@ interface DocumentPreview {
   warnings: string[];
 }
 
+interface DocumentResult {
+  document: {
+    id: string;
+    originalName: string;
+    mimeType: string | null;
+    sizeBytes: number | null;
+  };
+  duplicate: boolean;
+  message: string;
+}
+
 interface DocumentDownloadDialogProps {
   projectSlug: string;
   url: string;
   findingId?: string;
   onClose: () => void;
-  onSuccess?: (document: any) => void;
+  onSuccess?: (result: DocumentResult) => void;
 }
 
 export function DocumentDownloadDialog({
@@ -31,40 +42,39 @@ export function DocumentDownloadDialog({
   onSuccess,
 }: DocumentDownloadDialogProps) {
   const [preview, setPreview] = useState<DocumentPreview | null>(null);
-  const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
   const [loadingPreview, setLoadingPreview] = useState(true);
 
   // Load preview on mount
-  useState(() => {
-    loadPreview();
-  });
+  useEffect(() => {
+    async function fetchPreview() {
+      setLoadingPreview(true);
+      setError("");
 
-  async function loadPreview() {
-    setLoadingPreview(true);
-    setError("");
+      try {
+        const response = await fetch(`/api/projects/${projectSlug}/documents/preview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
 
-    try {
-      const response = await fetch(`/api/projects/${projectSlug}/documents/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || "Failed to load preview");
+        }
 
-      if (!response.ok) {
         const result = await response.json();
-        throw new Error(result.error || "Failed to load preview");
+        setPreview(result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load preview");
+      } finally {
+        setLoadingPreview(false);
       }
-
-      const result = await response.json();
-      setPreview(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load preview");
-    } finally {
-      setLoadingPreview(false);
     }
-  }
+
+    void fetchPreview();
+  }, [projectSlug, url]);
 
   async function handleDownload() {
     if (!preview?.canDownload) return;
@@ -88,10 +98,10 @@ export function DocumentDownloadDialog({
         throw new Error(result.error || "Failed to download document");
       }
 
-      const result = await response.json();
+      const result = await response.json() as DocumentResult;
 
       if (onSuccess) {
-        onSuccess(result.document);
+        onSuccess(result);
       }
 
       onClose();

@@ -97,8 +97,8 @@ export async function GET(
           "Cache-Control": "private, max-age=3600",
         },
       });
-    } catch (error) {
-      console.error("Failed to read document file:", error);
+    } catch (fileError) {
+      console.error("Failed to read document file:", fileError);
       return NextResponse.json(
         { error: "Failed to read document file" },
         { status: 500 }

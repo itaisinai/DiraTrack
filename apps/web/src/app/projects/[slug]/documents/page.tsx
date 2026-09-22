@@ -42,7 +42,8 @@ function DocumentsPage() {
   });
 
   useEffect(() => {
-    loadDocuments();
+    void loadDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [encodedSlug]);
 
   async function loadDocuments() {
