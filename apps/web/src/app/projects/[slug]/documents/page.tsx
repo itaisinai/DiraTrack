@@ -25,7 +25,21 @@ function DocumentsPage() {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [viewingDocument, setViewingDocument] = useState<ProjectDocument | null>(null);
+  const [deletingDocument, setDeletingDocument] = useState<ProjectDocument | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const encodedSlug = encodeRouteSegment(slug);
+
+  const filteredDocuments = documents.filter((doc) => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      doc.originalName.toLowerCase().includes(query) ||
+      doc.mimeType?.toLowerCase().includes(query) ||
+      getFileTypeLabel(doc.mimeType).toLowerCase().includes(query)
+    );
+  });
 
   useEffect(() => {
     loadDocuments();
@@ -95,6 +109,30 @@ function DocumentsPage() {
     return "bg-slate-100 text-slate-600";
   }
 
+  async function handleDelete(doc: ProjectDocument) {
+    setDeleting(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/projects/${encodedSlug}/documents/${encodeRouteSegment(doc.documentId)}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || "Failed to delete document");
+      }
+
+      setDeletingDocument(null);
+      await loadDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete document");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <AppShell>
       <header className="mb-8">
@@ -105,6 +143,22 @@ function DocumentsPage() {
         <p className="mt-2 text-[var(--muted)]">
           כל המסמכים שהורדו במסגרת המחקר
         </p>
+        {!loading && documents.length > 0 && (
+          <div className="mt-4">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="חיפוש לפי שם קובץ או סוג..."
+              className="w-full rounded-lg border border-[var(--border)] px-4 py-2"
+            />
+            {searchQuery && (
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                נמצאו {filteredDocuments.length} מתוך {documents.length} מסמכים
+              </p>
+            )}
+          </div>
+        )}
       </header>
 
       {loading && (
@@ -124,14 +178,89 @@ function DocumentsPage() {
         <div className="rounded-xl border border-[var(--border)] bg-white p-12 text-center">
           <h2 className="text-xl font-bold text-[var(--muted)]">אין מסמכים עדיין</h2>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            ניתן להוסיף מסמכים מתוצאות מחקר על ידי לחיצה על „הורדה כמסמך" בעמוד הממצא.
+            ניתן להוסיף מסמכים מתוצאות מחקר על ידי לחיצה על הורדה כמסמך בעמוד הממצא.
           </p>
         </div>
       )}
 
-      {!loading && !error && documents.length > 0 && (
+      {!loading && !error && documents.length > 0 && filteredDocuments.length === 0 && (
+        <div className="rounded-xl border border-[var(--border)] bg-white p-12 text-center">
+          <h2 className="text-xl font-bold text-[var(--muted)]">לא נמצאו מסמכים</h2>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            נסה מילות חיפוש אחרות
+          </p>
+        </div>
+      )}
+
+      {viewingDocument && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/45 p-4"
+          onClick={() => setViewingDocument(null)}
+        >
+          <div
+            className="mx-auto h-full max-w-6xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b p-4">
+              <h2 className="font-bold">{viewingDocument.originalName}</h2>
+              <button
+                onClick={() => setViewingDocument(null)}
+                className="rounded-lg border border-[var(--border)] px-4 py-2 font-semibold hover:bg-slate-50"
+              >
+                סגור
+              </button>
+            </div>
+            <iframe
+              src={`/api/projects/${encodedSlug}/documents/${encodeRouteSegment(viewingDocument.documentId)}/serve`}
+              className="flex-1 w-full"
+              title={viewingDocument.originalName}
+            />
+          </div>
+        </div>
+      )}
+
+      {deletingDocument && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4"
+          onClick={() => setDeletingDocument(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-2xl font-bold">הסרת מסמך</h2>
+            <p className="mt-4 text-[var(--muted)]">
+              האם אתה בטוח שברצונך להסיר את המסמך <strong>{deletingDocument.originalName}</strong> מהפרויקט?
+            </p>
+            <p className="mt-2 text-sm text-amber-700">
+              המסמך יוסר מהפרויקט הנוכחי. אם פרויקטים אחרים משתמשים בו, הקובץ יישאר במערכת.
+            </p>
+            {error && (
+              <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setDeletingDocument(null)}
+                disabled={deleting}
+                className="rounded-lg border border-[var(--border)] px-5 py-3 font-semibold hover:bg-slate-50 disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={() => handleDelete(deletingDocument)}
+                disabled={deleting}
+                className="rounded-lg bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? "מוחק..." : "הסר מסמך"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!loading && !error && filteredDocuments.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {documents.map((doc) => (
+          {filteredDocuments.map((doc) => (
             <article
               key={doc.documentId}
               className="rounded-xl border border-[var(--border)] bg-white p-6 transition-shadow hover:shadow-lg"
@@ -180,16 +309,34 @@ function DocumentsPage() {
                 </Link>
               )}
 
-              {doc.remoteUrl && (
-                <a
-                  href={doc.remoteUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 block text-sm font-medium text-[var(--primary)]"
+              <div className="mt-4 space-y-2">
+                <div className="flex gap-2">
+                  {doc.status === "downloaded" && doc.mimeType === "application/pdf" && (
+                    <button
+                      onClick={() => setViewingDocument(doc)}
+                      className="flex-1 rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-semibold hover:bg-slate-50"
+                    >
+                      צפייה
+                    </button>
+                  )}
+                  {doc.remoteUrl && (
+                    <a
+                      href={doc.remoteUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex-1 rounded-lg border border-[var(--border)] px-3 py-2 text-center text-sm font-semibold hover:bg-slate-50"
+                    >
+                      URL מקורי
+                    </a>
+                  )}
+                </div>
+                <button
+                  onClick={() => setDeletingDocument(doc)}
+                  className="w-full rounded-lg border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
                 >
-                  → כתובת URL מקורית
-                </a>
-              )}
+                  הסר מהפרויקט
+                </button>
+              </div>
             </article>
           ))}
         </div>
