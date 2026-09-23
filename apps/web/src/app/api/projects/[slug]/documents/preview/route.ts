@@ -1,13 +1,26 @@
 import { NextResponse } from "next/server";
+import { getDatabase, projects } from "@diratrack/database";
+import { eq } from "drizzle-orm";
+import {
+  validateURLForFetch,
+  ALLOWED_MIME_TYPES,
+  getLabelForMIME,
+} from "@diratrack/document-processing";
 
 /**
  * POST /api/projects/:slug/documents/preview
  *
  * Get metadata about a URL before downloading (HEAD request)
  * Returns file type, estimated size, and URL for confirmation
+ *
+ * Requires project context for proper authorization
  */
-export async function POST(request: Request) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
   try {
+    const { slug } = await params;
     const body = await request.json();
     const { url } = body;
 
@@ -15,19 +28,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
-    // Validate HTTPS
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-      if (parsedUrl.protocol !== "https:") {
-        return NextResponse.json(
-          { error: "Only HTTPS URLs are allowed" },
-          { status: 400 }
-        );
-      }
-    } catch {
-      return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+    const db = getDatabase();
+
+    // Verify project exists (project-scoped authorization)
+    const [project] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.currentSlug, slug))
+      .limit(1);
+
+    if (!project) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
+
+    // Validate URL with SSRF protection
+    const urlValidation = await validateURLForFetch(url);
+    if (!urlValidation.valid || !urlValidation.url) {
+      return NextResponse.json(
+        { error: urlValidation.error || "כתובת URL לא תקינה" },
+        { status: 400 }
+      );
+    }
+
+    const parsedUrl = urlValidation.url;
 
     // Make HEAD request to get metadata
     const controller = new AbortController();
@@ -39,6 +62,9 @@ export async function POST(request: Request) {
         method: "HEAD",
         signal: controller.signal,
         redirect: "follow",
+        headers: {
+          "User-Agent": "DiraTrack/1.0 (+https://github.com/itaisinai/DiraTrack)",
+        },
       });
     } catch {
       clearTimeout(timeout);
@@ -46,12 +72,15 @@ export async function POST(request: Request) {
       try {
         response = await fetch(url, {
           method: "GET",
-          headers: { Range: "bytes=0-0" },
+          headers: {
+            Range: "bytes=0-0",
+            "User-Agent": "DiraTrack/1.0 (+https://github.com/itaisinai/DiraTrack)",
+          },
           signal: AbortSignal.timeout(10000),
         });
       } catch {
         return NextResponse.json(
-          { error: "Failed to fetch file metadata" },
+          { error: "לא הצלחנו לקבל מידע על הקובץ" },
           { status: 502 }
         );
       }
@@ -61,7 +90,7 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       return NextResponse.json(
-        { error: `Server returned HTTP ${response.status}` },
+        { error: `השרת החזיר שגיאה: HTTP ${response.status}` },
         { status: 502 }
       );
     }
@@ -73,19 +102,8 @@ export async function POST(request: Request) {
     const sizeBytes = contentLength ? Number.parseInt(contentLength, 10) : null;
     const filename = parsedUrl.pathname.split("/").pop() || "document";
 
-    // Determine file type label
-    const fileTypeLabels: Record<string, string> = {
-      "application/pdf": "PDF",
-      "application/msword": "Word",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word (DOCX)",
-      "application/vnd.ms-excel": "Excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel (XLSX)",
-      "image/jpeg": "תמונה (JPEG)",
-      "image/png": "תמונה (PNG)",
-      "text/plain": "קובץ טקסט",
-    };
-
-    const fileTypeLabel = fileTypeLabels[mimeType] || mimeType;
+    // Get file type label
+    const fileTypeLabel = getLabelForMIME(mimeType);
 
     // Format size
     let sizeLabel = "לא ידוע";
@@ -100,20 +118,17 @@ export async function POST(request: Request) {
     }
 
     // Check if allowed
-    const allowedMimeTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "image/jpeg",
-      "image/png",
-      "text/plain",
-    ];
-
-    const isAllowed = allowedMimeTypes.includes(mimeType);
+    const isAllowed = Boolean(ALLOWED_MIME_TYPES[mimeType]);
     const maxSize = 100 * 1024 * 1024; // 100MB
     const isSizeOk = sizeBytes === null || sizeBytes <= maxSize;
+
+    const warnings: string[] = [];
+    if (!isAllowed) {
+      warnings.push(`סוג קובץ לא נתמך: ${mimeType}`);
+    }
+    if (!isSizeOk) {
+      warnings.push("הקובץ גדול מדי (מקסימום 100MB)");
+    }
 
     return NextResponse.json({
       url,
@@ -125,10 +140,7 @@ export async function POST(request: Request) {
       isAllowed,
       isSizeOk,
       canDownload: isAllowed && isSizeOk,
-      warnings: [
-        ...(!isAllowed ? [`סוג קובץ לא נתמך: ${mimeType}`] : []),
-        ...(!isSizeOk ? ["הקובץ גדול מדי (מקסימום 100MB)"] : []),
-      ],
+      warnings,
     });
   } catch (error) {
     console.error("Document preview error:", error);
