@@ -214,7 +214,27 @@ export async function downloadDocument(
       .limit(1);
 
     if (existingDoc) {
-      // Document exists - check if already linked to this project
+      // Document exists - check if we need to restore the physical file
+      const needsFileRestoration = existingDoc.status === "file-deleted" && existingDoc.localPath;
+
+      if (needsFileRestoration && existingDoc.localPath) {
+        // Restore the physical file by moving temp to final location
+        const finalPath = path.join(process.cwd(), existingDoc.localPath);
+        const moveResult = await moveToFinalDestination(tempPath, finalPath);
+
+        if (!moveResult.success) {
+          await cleanupTempFile(tempPath);
+          return {
+            success: false,
+            error: `שגיאה בשחזור הקובץ: ${moveResult.error}`,
+          };
+        }
+      } else {
+        // File already exists physically - cleanup temp file
+        await cleanupTempFile(tempPath);
+      }
+
+      // Check if already linked to this project
       const [existingLink] = await db
         .select()
         .from(projectDocuments)
@@ -226,15 +246,25 @@ export async function downloadDocument(
         )
         .limit(1);
 
-      // Cleanup temp file
-      await cleanupTempFile(tempPath);
-
       if (existingLink) {
         // Already linked to this project
+        if (needsFileRestoration) {
+          // Update status to reflect restored file
+          await db
+            .update(documents)
+            .set({
+              status: "downloaded",
+              physicalFileDeletedAt: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(documents.id, existingDoc.id));
+        }
+
         return {
           success: true,
           document: existingDoc as unknown as DocumentMetadata,
           isExistingDocument: true,
+          wasFileRestored: needsFileRestoration ? true : undefined,
         };
       }
 
@@ -258,11 +288,12 @@ export async function downloadDocument(
             findingId,
             sha256: existingDoc.sha256,
             source: "existing-hash",
+            wasFileRestored: needsFileRestoration,
           },
         });
 
-        // If file was marked as deleted, restore it
-        if (existingDoc.status === "file-deleted" && existingDoc.localPath) {
+        // If file was marked as deleted, update status to reflect restoration
+        if (needsFileRestoration) {
           await tx
             .update(documents)
             .set({
@@ -278,7 +309,7 @@ export async function downloadDocument(
         success: true,
         document: existingDoc as unknown as DocumentMetadata,
         isExistingDocument: true,
-        wasFileRestored: existingDoc.status === "file-deleted",
+        wasFileRestored: needsFileRestoration ? true : undefined,
       };
     }
 
@@ -399,7 +430,18 @@ export async function uploadDocument(
       .limit(1);
 
     if (existingDoc) {
-      // Document exists - link to project if not already linked
+      // Document exists - restore physical file if needed
+      const needsFileRestoration = existingDoc.status === "file-deleted" && existingDoc.localPath;
+
+      if (needsFileRestoration && existingDoc.localPath) {
+        // Restore the physical file by writing the uploaded buffer
+        const finalPath = path.join(process.cwd(), existingDoc.localPath);
+        const documentsDir = path.dirname(finalPath);
+        await fs.mkdir(documentsDir, { recursive: true });
+        await fs.writeFile(finalPath, fileBuffer);
+      }
+
+      // Check if already linked to this project
       const [existingLink] = await db
         .select()
         .from(projectDocuments)
@@ -412,10 +454,24 @@ export async function uploadDocument(
         .limit(1);
 
       if (existingLink) {
+        // Already linked to this project
+        if (needsFileRestoration) {
+          // Update status to reflect restored file
+          await db
+            .update(documents)
+            .set({
+              status: "downloaded",
+              physicalFileDeletedAt: null,
+              updatedAt: new Date(),
+            })
+            .where(eq(documents.id, existingDoc.id));
+        }
+
         return {
           success: true,
           document: existingDoc as unknown as DocumentMetadata,
           isExistingDocument: true,
+          wasFileRestored: needsFileRestoration ? true : undefined,
         };
       }
 
@@ -438,11 +494,12 @@ export async function uploadDocument(
             findingId,
             sha256,
             source: "user-upload-duplicate",
+            wasFileRestored: needsFileRestoration,
           },
         });
 
-        // Restore if deleted
-        if (existingDoc.status === "file-deleted") {
+        // Update status if file was restored
+        if (needsFileRestoration) {
           await tx
             .update(documents)
             .set({
@@ -458,7 +515,7 @@ export async function uploadDocument(
         success: true,
         document: existingDoc as unknown as DocumentMetadata,
         isExistingDocument: true,
-        wasFileRestored: existingDoc.status === "file-deleted",
+        wasFileRestored: needsFileRestoration ? true : undefined,
       };
     }
 

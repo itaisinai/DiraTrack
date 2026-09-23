@@ -57,6 +57,7 @@ export async function downloadFileSecurely(
 
   let tempPath: string | null = null;
   let writeStream: fs.FileHandle | null = null;
+  let timeout: NodeJS.Timeout | null = null;
 
   try {
     // 1. Validate URL structure and resolve IPs
@@ -81,7 +82,7 @@ export async function downloadFileSecurely(
     let response: Response | null = null;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       while (redirectCount <= maxRedirects) {
@@ -104,6 +105,7 @@ export async function downloadFileSecurely(
         ) {
           const location = response.headers.get("location");
           if (!location) {
+            if (timeout) clearTimeout(timeout);
             return {
               success: false,
               error: "הפניה ללא כתובת יעד",
@@ -121,6 +123,7 @@ export async function downloadFileSecurely(
           );
 
           if (!redirectValidation.valid) {
+            if (timeout) clearTimeout(timeout);
             return {
               success: false,
               error: redirectValidation.error || "הפניה לא תקינה",
@@ -136,6 +139,7 @@ export async function downloadFileSecurely(
         break;
       }
     } catch (error) {
+      if (timeout) clearTimeout(timeout);
       if (error instanceof Error && error.name === "AbortError") {
         return {
           success: false,
@@ -146,11 +150,10 @@ export async function downloadFileSecurely(
         success: false,
         error: error instanceof Error ? error.message : "שגיאה בהורדה",
       };
-    } finally {
-      clearTimeout(timeout);
     }
 
     if (!response) {
+      if (timeout) clearTimeout(timeout);
       return {
         success: false,
         error: "לא הצלחנו לקבל תגובה מהשרת",
@@ -158,6 +161,7 @@ export async function downloadFileSecurely(
     }
 
     if (!response.ok) {
+      if (timeout) clearTimeout(timeout);
       return {
         success: false,
         error: `השרת החזיר שגיאה: HTTP ${response.status}`,
@@ -169,6 +173,7 @@ export async function downloadFileSecurely(
     const mimeType = contentType.split(";")[0]?.trim() || "application/octet-stream";
 
     if (expectedMIME && mimeType !== expectedMIME) {
+      if (timeout) clearTimeout(timeout);
       return {
         success: false,
         error: `סוג הקובץ לא תואם: ציפינו ל־${expectedMIME}, קיבלנו ${mimeType}`,
@@ -180,6 +185,7 @@ export async function downloadFileSecurely(
     if (contentLength) {
       const declaredSize = Number.parseInt(contentLength, 10);
       if (declaredSize > maxSizeBytes) {
+        if (timeout) clearTimeout(timeout);
         return {
           success: false,
           error: `הקובץ גדול מדי: ${(declaredSize / (1024 * 1024)).toFixed(1)} MB (מקסימום: ${(maxSizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
@@ -190,6 +196,7 @@ export async function downloadFileSecurely(
     // 6. Stream to file and calculate hash
     const reader = response.body?.getReader();
     if (!reader) {
+      if (timeout) clearTimeout(timeout);
       return {
         success: false,
         error: "לא ניתן לקרוא את תוכן התגובה",
@@ -217,6 +224,12 @@ export async function downloadFileSecurely(
         // Write to file and update hash
         await writeStream.write(value);
         hash.update(value);
+      }
+
+      // Streaming completed successfully - clear the timeout
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
       }
 
       await writeStream.close();
@@ -249,7 +262,8 @@ export async function downloadFileSecurely(
         finalURL: currentURL,
       };
     } catch (streamError) {
-      // Cleanup on stream error
+      // Cleanup on stream error (including timeout during streaming)
+      if (timeout) clearTimeout(timeout);
       if (writeStream) {
         await writeStream.close().catch(() => {});
       }
@@ -266,6 +280,7 @@ export async function downloadFileSecurely(
     }
   } catch (error) {
     // Cleanup on any error
+    if (timeout) clearTimeout(timeout);
     if (writeStream) {
       await writeStream.close().catch(() => {});
     }

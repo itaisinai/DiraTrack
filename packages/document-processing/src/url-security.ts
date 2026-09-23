@@ -33,10 +33,7 @@ const BLOCKED_IP_RANGES_V4 = [
 
 const BLOCKED_IPV6_PATTERNS = [
   { pattern: /^::1$/, name: "Loopback (::1)" },
-  { pattern: /^::ffff:127\./i, name: "IPv4-mapped loopback" },
-  { pattern: /^fe80:/i, name: "Link-local" },
-  { pattern: /^fc00:/i, name: "Unique local (fc00::/7)" },
-  { pattern: /^fd00:/i, name: "Unique local (fd00::/8)" },
+  { pattern: /^::$/i, name: "Unspecified (::)" },
   { pattern: /^ff[0-9a-f]{2}:/i, name: "Multicast" },
   { pattern: /^fd00:ec2::254$/i, name: "AWS metadata (IPv6)" },
 ];
@@ -117,17 +114,144 @@ export function validateIPv4(ip: string): IPValidationResult {
 }
 
 /**
+ * Parse IPv6 address into 16 bytes
+ */
+function parseIPv6ToBytes(ip: string): Buffer | null {
+  try {
+    const normalized = ip.toLowerCase();
+
+    // Handle IPv4-mapped IPv6 (::ffff:192.168.1.1)
+    const ipv4MappedMatch = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+    if (ipv4MappedMatch) {
+      const ipv4Part = ipv4MappedMatch[1];
+      const ipv4Bytes = ipv4Part!.split('.').map(p => Number.parseInt(p, 10));
+      return Buffer.from([
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff,
+        ipv4Bytes[0]!, ipv4Bytes[1]!, ipv4Bytes[2]!, ipv4Bytes[3]!
+      ]);
+    }
+
+    // Expand :: notation
+    const parts = normalized.split(':');
+    const doubleColonIndex = parts.indexOf('');
+
+    let hextets: number[] = [];
+
+    if (doubleColonIndex !== -1) {
+      // Has :: compression
+      const leftParts = parts.slice(0, doubleColonIndex).filter(p => p !== '');
+      const rightParts = parts.slice(doubleColonIndex + 1).filter(p => p !== '');
+      const zeroCount = 8 - leftParts.length - rightParts.length;
+
+      hextets = [
+        ...leftParts.map(p => Number.parseInt(p, 16)),
+        ...Array(zeroCount).fill(0),
+        ...rightParts.map(p => Number.parseInt(p, 16))
+      ];
+    } else {
+      // No compression
+      hextets = parts.map(p => Number.parseInt(p, 16));
+    }
+
+    if (hextets.length !== 8) return null;
+
+    // Convert to 16 bytes
+    const bytes = new Uint8Array(16);
+    for (let i = 0; i < 8; i++) {
+      bytes[i * 2] = (hextets[i]! >> 8) & 0xff;
+      bytes[i * 2 + 1] = hextets[i]! & 0xff;
+    }
+
+    return Buffer.from(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if IPv6 address matches a CIDR prefix
+ */
+function matchesIPv6CIDR(ipBytes: Buffer, cidr: string): boolean {
+  const [prefix, prefixLenStr] = cidr.split('/');
+  const prefixLen = Number.parseInt(prefixLenStr!, 10);
+  const prefixBytes = parseIPv6ToBytes(prefix!);
+
+  if (!prefixBytes) return false;
+
+  // Compare the prefix bits
+  const fullBytes = Math.floor(prefixLen / 8);
+  const remainingBits = prefixLen % 8;
+
+  // Check full bytes
+  for (let i = 0; i < fullBytes; i++) {
+    if (ipBytes[i] !== prefixBytes[i]) return false;
+  }
+
+  // Check remaining bits
+  if (remainingBits > 0) {
+    const mask = (0xff << (8 - remainingBits)) & 0xff;
+    if ((ipBytes[fullBytes]! & mask) !== (prefixBytes[fullBytes]! & mask)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Check if IPv6 address is in blocked patterns
  */
 export function validateIPv6(ip: string): IPValidationResult {
   const normalized = ip.toLowerCase();
+  const ipBytes = parseIPv6ToBytes(normalized);
 
+  if (!ipBytes) {
+    return {
+      valid: false,
+      error: "כתובת IPv6 לא תקינה",
+      blockedReason: "Invalid format",
+    };
+  }
+
+  // Check regex patterns first
   for (const { pattern, name } of BLOCKED_IPV6_PATTERNS) {
     if (pattern.test(normalized)) {
       return {
         valid: false,
         error: "כתובת IP פרטית או שמורה אינה מותרת",
         blockedReason: `${name} (${ip})`,
+      };
+    }
+  }
+
+  // Check CIDR ranges
+  // Unique local addresses: fc00::/7 (includes fc00:: through fdff::)
+  if (matchesIPv6CIDR(ipBytes, 'fc00::/7')) {
+    return {
+      valid: false,
+      error: "כתובת IP פרטית או שמורה אינה מותרת",
+      blockedReason: `Unique local fc00::/7 (${ip})`,
+    };
+  }
+
+  // Link-local: fe80::/10 (includes fe80:: through febf::)
+  if (matchesIPv6CIDR(ipBytes, 'fe80::/10')) {
+    return {
+      valid: false,
+      error: "כתובת IP פרטית או שמורה אינה מותרת",
+      blockedReason: `Link-local fe80::/10 (${ip})`,
+    };
+  }
+
+  // Check IPv4-mapped addresses for private IPv4
+  if (normalized.startsWith('::ffff:')) {
+    const ipv4Part = normalized.substring(7);
+    const ipv4Result = validateIPv4(ipv4Part);
+    if (!ipv4Result.valid) {
+      return {
+        valid: false,
+        error: "כתובת IP פרטית או שמורה אינה מותרת",
+        blockedReason: `IPv4-mapped private ${ipv4Result.blockedReason}`,
       };
     }
   }
