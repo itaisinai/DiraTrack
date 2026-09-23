@@ -40,7 +40,7 @@ export async function POST(request: Request) {
         signal: controller.signal,
         redirect: "follow",
       });
-    } catch (error) {
+    } catch {
       clearTimeout(timeout);
       // If HEAD fails, try GET with range request
       try {
