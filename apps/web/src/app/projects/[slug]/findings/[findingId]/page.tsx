@@ -149,7 +149,7 @@ function FindingPage() {
             <aside className="rounded-xl border border-[var(--border)] bg-white p-6">
               <h2 className="text-lg font-bold">החלטת המשתמש</h2>
               <p className="mt-2 text-sm text-[var(--muted)]">
-                סימון כרלוונטי משאיר את הממצא במצב „דורש בדיקה"; הוא אינו מאמת אותו.
+                סימון כרלוונטי משאיר את הממצא במצב &quot;דורש בדיקה&quot;; הוא אינו מאמת אותו.
               </p>
               {error && (
                 <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
