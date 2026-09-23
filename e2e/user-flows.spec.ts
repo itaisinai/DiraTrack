@@ -357,9 +357,10 @@ test.describe("User Flow - Research Consent", () => {
     // Verify dialog appears
     await expect(page.getByRole("dialog")).toBeVisible({ timeout: 5000 });
 
-    // Verify sources are shown
-    await expect(page.getByText(/דירה בהנחה/)).toBeVisible();
-    await expect(page.getByText(/אסיה סיירוס/)).toBeVisible();
+    // Verify sources are shown (use more specific selectors to avoid multiple matches)
+    await expect(page.getByRole("dialog").getByRole("heading", { level: 2 })).toContainText("בחירת מקורות");
+    await expect(page.getByRole("dialog")).toContainText("דירה בהנחה");
+    await expect(page.getByRole("dialog")).toContainText("אסיה סיירוס");
   });
 
   test("Cannot start research without consent", async ({ page, request }) => {
