@@ -5,6 +5,8 @@ import { documents, projectDocuments, auditEvents, projects, getDatabase } from 
 import { eq, and } from "drizzle-orm";
 
 type Database = ReturnType<typeof getDatabase>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DatabaseOrTransaction = Database | any;
 import { downloadFileSecurely, moveToFinalDestination, cleanupTempFile } from "./streaming-downloader.js";
 import { sanitizeFilename, getLabelForMIME } from "./file-validation.js";
 
@@ -77,7 +79,7 @@ export interface RemoveFromProjectOptions {
  * Get project-scoped document with link information
  */
 export async function getProjectDocument(
-  db: Database,
+  db: DatabaseOrTransaction,
   projectId: string,
   documentId: string
 ): Promise<{ document: DocumentMetadata; link: ProjectDocumentLink } | null> {
