@@ -11,7 +11,7 @@ export {
   validateRedirect,
   type URLValidationResult,
   type IPValidationResult,
-} from "./url-security.js";
+} from "./url-security";
 
 // File Validation
 export {
@@ -24,7 +24,7 @@ export {
   validateFile,
   type MIMETypeInfo,
   type FileValidationResult,
-} from "./file-validation.js";
+} from "./file-validation";
 
 // Streaming Downloader
 export {
@@ -33,7 +33,7 @@ export {
   cleanupTempFile,
   type DownloadOptions,
   type DownloadResult,
-} from "./streaming-downloader.js";
+} from "./streaming-downloader";
 
 // Document Service
 export {
@@ -50,4 +50,4 @@ export {
   type UploadDocumentOptions,
   type DeleteFileOptions,
   type RemoveFromProjectOptions,
-} from "./document-service.js";
+} from "./document-service";

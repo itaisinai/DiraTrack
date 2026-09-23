@@ -7,8 +7,8 @@ import { eq, and } from "drizzle-orm";
 type Database = ReturnType<typeof getDatabase>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DatabaseOrTransaction = Database | any;
-import { downloadFileSecurely, moveToFinalDestination, cleanupTempFile } from "./streaming-downloader.js";
-import { sanitizeFilename, getLabelForMIME } from "./file-validation.js";
+import { downloadFileSecurely, moveToFinalDestination, cleanupTempFile } from "./streaming-downloader";
+import { sanitizeFilename, getLabelForMIME } from "./file-validation";
 
 /**
  * Document Service: Project-scoped document operations

@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { validateURLForFetch, validateRedirect } from "./url-security.js";
-import { validateFileContent, sanitizeFilename } from "./file-validation.js";
+import { validateURLForFetch, validateRedirect } from "./url-security";
+import { validateFileContent, sanitizeFilename } from "./file-validation";
 
 /**
  * Streaming file downloader with security controls
