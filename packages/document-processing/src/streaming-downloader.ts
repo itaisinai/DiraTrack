@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { validateURLForFetch, validateRedirect } from "./url-security";
+import { validateURLStructure } from "./url-security";
 import { validateFileContent, sanitizeFilename } from "./file-validation";
+import { safeFetch } from "./safe-http-client";
 
 /**
  * Streaming file downloader with security controls
@@ -60,8 +61,8 @@ export async function downloadFileSecurely(
   let timeout: NodeJS.Timeout | null = null;
 
   try {
-    // 1. Validate URL structure and resolve IPs
-    const urlValidation = await validateURLForFetch(url);
+    // 1. Validate URL structure
+    const urlValidation = validateURLStructure(url);
     if (!urlValidation.valid || !urlValidation.url) {
       return {
         success: false,
@@ -76,101 +77,35 @@ export async function downloadFileSecurely(
     const tmpFilename = `download-${Date.now()}-${crypto.randomBytes(8).toString("hex")}.tmp`;
     tempPath = path.join(tmpDir, tmpFilename);
 
-    // 3. Fetch with redirect validation
-    let currentURL = url;
-    let redirectCount = 0;
-    let response: Response | null = null;
-
+    // 3. Fetch with DNS pinning and redirect validation
     const controller = new AbortController();
     timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-    try {
-      while (redirectCount <= maxRedirects) {
-        response = await fetch(currentURL, {
-          method: "GET",
-          headers: {
-            "User-Agent": userAgent,
-          },
-          signal: controller.signal,
-          redirect: "manual", // Handle redirects manually for validation
-        });
+    const fetchResult = await safeFetch({
+      url,
+      method: "GET",
+      headers: {
+        "User-Agent": userAgent,
+      },
+      signal: controller.signal,
+      maxRedirects,
+    });
 
-        // Handle redirects
-        if (
-          response.status === 301 ||
-          response.status === 302 ||
-          response.status === 303 ||
-          response.status === 307 ||
-          response.status === 308
-        ) {
-          const location = response.headers.get("location");
-          if (!location) {
-            if (timeout) clearTimeout(timeout);
-            return {
-              success: false,
-              error: "הפניה ללא כתובת יעד",
-            };
-          }
-
-          // Resolve relative redirects
-          const redirectURL = new URL(location, currentURL).href;
-
-          // Validate redirect destination
-          const redirectValidation = await validateRedirect(
-            redirectURL,
-            redirectCount,
-            maxRedirects
-          );
-
-          if (!redirectValidation.valid) {
-            if (timeout) clearTimeout(timeout);
-            return {
-              success: false,
-              error: redirectValidation.error || "הפניה לא תקינה",
-            };
-          }
-
-          currentURL = redirectURL;
-          redirectCount++;
-          continue;
-        }
-
-        // Non-redirect response
-        break;
-      }
-    } catch (error) {
-      if (timeout) clearTimeout(timeout);
-      if (error instanceof Error && error.name === "AbortError") {
-        return {
-          success: false,
-          error: `הזמן הקצוב להורדה עבר (${timeoutMs / 1000} שניות)`,
-        };
-      }
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "שגיאה בהורדה",
-      };
-    }
-
-    if (!response) {
+    if (!fetchResult.ok || !fetchResult.response) {
       if (timeout) clearTimeout(timeout);
       return {
         success: false,
-        error: "לא הצלחנו לקבל תגובה מהשרת",
+        error: fetchResult.error || "שגיאה בהורדה",
       };
     }
 
-    if (!response.ok) {
-      if (timeout) clearTimeout(timeout);
-      return {
-        success: false,
-        error: `השרת החזיר שגיאה: HTTP ${response.status}`,
-      };
-    }
+    const response = fetchResult.response;
+    const currentURL = fetchResult.finalURL || url;
 
     // 4. Validate content type
-    const contentType = response.headers.get("content-type") || "";
-    const mimeType = contentType.split(";")[0]?.trim() || "application/octet-stream";
+    const contentTypeHeader = response.headers["content-type"];
+    const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader;
+    const mimeType = (contentType || "").split(";")[0]?.trim() || "application/octet-stream";
 
     if (expectedMIME && mimeType !== expectedMIME) {
       if (timeout) clearTimeout(timeout);
@@ -181,7 +116,8 @@ export async function downloadFileSecurely(
     }
 
     // 5. Check content length if provided
-    const contentLength = response.headers.get("content-length");
+    const contentLengthHeader = response.headers["content-length"];
+    const contentLength = Array.isArray(contentLengthHeader) ? contentLengthHeader[0] : contentLengthHeader;
     if (contentLength) {
       const declaredSize = Number.parseInt(contentLength, 10);
       if (declaredSize > maxSizeBytes) {
@@ -194,8 +130,8 @@ export async function downloadFileSecurely(
     }
 
     // 6. Stream to file and calculate hash
-    const reader = response.body?.getReader();
-    if (!reader) {
+    // Undici body is a Node.js stream, not a web ReadableStream
+    if (!response.body) {
       if (timeout) clearTimeout(timeout);
       return {
         success: false,
@@ -208,11 +144,9 @@ export async function downloadFileSecurely(
     let totalBytes = 0;
 
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        totalBytes += value.length;
+      // Undici body is a Node.js Readable stream
+      for await (const chunk of response.body) {
+        totalBytes += chunk.length;
 
         // Enforce size limit while streaming
         if (totalBytes > maxSizeBytes) {
@@ -222,8 +156,8 @@ export async function downloadFileSecurely(
         }
 
         // Write to file and update hash
-        await writeStream.write(value);
-        hash.update(value);
+        await writeStream.write(chunk);
+        hash.update(chunk);
       }
 
       // Streaming completed successfully - clear the timeout

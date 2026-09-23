@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { getDatabase, projects } from "@diratrack/database";
 import { eq } from "drizzle-orm";
 import {
-  validateURLForFetch,
+  validateURLStructure,
   ALLOWED_MIME_TYPES,
   getLabelForMIME,
+  safeFetch,
 } from "@diratrack/document-processing";
 
 /**
  * POST /api/projects/:slug/documents/preview
  *
- * Get metadata about a URL before downloading (HEAD request)
+ * Get metadata about a URL before downloading (HEAD request with DNS pinning)
  * Returns file type, estimated size, and URL for confirmation
  *
  * Requires project context for proper authorization
@@ -41,8 +42,8 @@ export async function POST(
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Validate URL with SSRF protection
-    const urlValidation = await validateURLForFetch(url);
+    // Validate URL structure
+    const urlValidation = validateURLStructure(url);
     if (!urlValidation.valid || !urlValidation.url) {
       return NextResponse.json(
         { error: urlValidation.error || "כתובת URL לא תקינה" },
@@ -50,102 +51,75 @@ export async function POST(
       );
     }
 
-    const parsedUrl = urlValidation.url;
-
-    // Make HEAD request to get metadata
+    // Use safe fetch with DNS pinning - try HEAD first
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: "HEAD",
-        signal: controller.signal,
-        redirect: "follow",
+    let fetchResult = await safeFetch({
+      url,
+      method: "HEAD",
+      headers: {
+        "User-Agent": "DiraTrack/1.0 (+https://github.com/itaisinai/DiraTrack)",
+      },
+      signal: controller.signal,
+      maxRedirects: 5,
+    });
+
+    clearTimeout(timeout);
+
+    // If HEAD failed, try GET with Range
+    if (!fetchResult.ok || !fetchResult.response) {
+      fetchResult = await safeFetch({
+        url,
+        method: "GET",
         headers: {
+          "Range": "bytes=0-0",
           "User-Agent": "DiraTrack/1.0 (+https://github.com/itaisinai/DiraTrack)",
         },
+        signal: AbortSignal.timeout(10000),
+        maxRedirects: 5,
       });
-    } catch {
-      clearTimeout(timeout);
-      // If HEAD fails, try GET with range request
-      try {
-        response = await fetch(url, {
-          method: "GET",
-          headers: {
-            Range: "bytes=0-0",
-            "User-Agent": "DiraTrack/1.0 (+https://github.com/itaisinai/DiraTrack)",
-          },
-          signal: AbortSignal.timeout(10000),
-        });
-      } catch {
+
+      if (!fetchResult.ok || !fetchResult.response) {
         return NextResponse.json(
-          { error: "לא הצלחנו לקבל מידע על הקובץ" },
+          { error: fetchResult.error || "לא הצלחנו לקבל מידע על הקובץ" },
           { status: 502 }
         );
       }
-    } finally {
-      clearTimeout(timeout);
     }
 
-    if (!response.ok) {
+    const response = fetchResult.response;
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       return NextResponse.json(
-        { error: `השרת החזיר שגיאה: HTTP ${response.status}` },
+        { error: `השרת החזיר שגיאה: HTTP ${response.statusCode}` },
         { status: 502 }
       );
     }
 
-    // Extract metadata
-    const contentType = response.headers.get("content-type") || "application/octet-stream";
+    // Extract metadata from headers
+    const contentTypeHeader = response.headers["content-type"];
+    const contentType = (Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader) || "application/octet-stream";
     const mimeType = contentType.split(";")[0]?.trim() || "application/octet-stream";
-    const contentLength = response.headers.get("content-length");
-    const sizeBytes = contentLength ? Number.parseInt(contentLength, 10) : null;
-    const filename = parsedUrl.pathname.split("/").pop() || "document";
 
-    // Get file type label
-    const fileTypeLabel = getLabelForMIME(mimeType);
+    const contentLengthHeader = response.headers["content-length"];
+    const contentLength = Array.isArray(contentLengthHeader) ? contentLengthHeader[0] : contentLengthHeader;
+    const sizeBytes = contentLength ? Number.parseInt(contentLength, 10) : undefined;
 
-    // Format size
-    let sizeLabel = "לא ידוע";
-    if (sizeBytes !== null) {
-      if (sizeBytes < 1024) {
-        sizeLabel = `${sizeBytes} בתים`;
-      } else if (sizeBytes < 1024 * 1024) {
-        sizeLabel = `${(sizeBytes / 1024).toFixed(1)} KB`;
-      } else {
-        sizeLabel = `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-      }
-    }
-
-    // Check if allowed
-    const isAllowed = Boolean(ALLOWED_MIME_TYPES[mimeType]);
-    const maxSize = 100 * 1024 * 1024; // 100MB
-    const isSizeOk = sizeBytes === null || sizeBytes <= maxSize;
-
-    const warnings: string[] = [];
-    if (!isAllowed) {
-      warnings.push(`סוג קובץ לא נתמך: ${mimeType}`);
-    }
-    if (!isSizeOk) {
-      warnings.push("הקובץ גדול מדי (מקסימום 100MB)");
-    }
+    const isSupported = Boolean(ALLOWED_MIME_TYPES[mimeType]);
+    const mimeLabel = isSupported ? getLabelForMIME(mimeType) : null;
 
     return NextResponse.json({
-      url,
-      filename,
+      url: fetchResult.finalURL || url,
       mimeType,
-      fileTypeLabel,
+      mimeLabel,
       sizeBytes,
-      sizeLabel,
-      isAllowed,
-      isSizeOk,
-      canDownload: isAllowed && isSizeOk,
-      warnings,
+      isSupported,
     });
   } catch (error) {
-    console.error("Document preview error:", error);
+    console.error("Preview error:", error);
     return NextResponse.json(
-      { error: "Failed to preview document" },
+      { error: "שגיאה בקבלת מידע על הקובץ" },
       { status: 500 }
     );
   }

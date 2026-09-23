@@ -13,6 +13,14 @@ export {
   type IPValidationResult,
 } from "./url-security";
 
+// Safe HTTP Client
+export {
+  safeFetch,
+  type SafeHTTPOptions,
+  type SafeHTTPResponse,
+  type SafeHTTPResult,
+} from "./safe-http-client";
+
 // File Validation
 export {
   ALLOWED_MIME_TYPES,
