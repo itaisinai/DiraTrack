@@ -1,4 +1,4 @@
-import { getDatabase, documents, projectDocuments, projects } from "@diratrack/database";
+import { getDatabase, documents, projectDocuments, ensureLocalUser, findProjectBySlug } from "@diratrack/database";
 import { NextResponse } from "next/server";
 import { eq, and } from "drizzle-orm";
 import fs from "node:fs/promises";
@@ -18,13 +18,11 @@ export async function GET(
     const { slug, documentId } = await params;
     const db = getDatabase();
 
-    // Get project
-    const [project] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.currentSlug, slug))
-      .limit(1);
+    // Ensure user is authenticated
+    const user = await ensureLocalUser(db);
 
+    // Get project with owner check
+    const project = await findProjectBySlug(db, user.id, slug);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
@@ -37,7 +35,7 @@ export async function GET(
       .from(projectDocuments)
       .where(
         and(
-          eq(projectDocuments.projectId, project.id),
+          eq(projectDocuments.projectId, project.project.id),
           eq(projectDocuments.documentId, documentId)
         )
       )
