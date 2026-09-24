@@ -1,6 +1,5 @@
-import { getDatabase, projects } from "@diratrack/database";
+import { getDatabase, ensureLocalUser, findProjectBySlug } from "@diratrack/database";
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import {
   listProjectDocuments,
   downloadDocument,
@@ -32,13 +31,11 @@ export async function POST(
 
     const db = getDatabase();
 
-    // Get project
-    const [project] = await db
-      .select({ id: projects.id, ownerId: projects.ownerId })
-      .from(projects)
-      .where(eq(projects.currentSlug, slug))
-      .limit(1);
+    // Ensure user is authenticated
+    const user = await ensureLocalUser(db);
 
+    // Get project with owner check and canonical slug resolution
+    const project = await findProjectBySlug(db, user.id, slug);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
@@ -62,11 +59,11 @@ export async function POST(
 
     // Download file
     const result = await downloadDocument(db, {
-      projectId: project.id,
+      projectId: project.project.id,
       remoteUrl: url,
       findingId: findingId || null,
       originalFilename: originalName,
-      ownerId: project.ownerId,
+      ownerId: user.id,
     });
 
     if (!result.success) {
@@ -115,13 +112,11 @@ export async function PUT(
 
     const db = getDatabase();
 
-    // Get project
-    const [project] = await db
-      .select({ id: projects.id, ownerId: projects.ownerId })
-      .from(projects)
-      .where(eq(projects.currentSlug, slug))
-      .limit(1);
+    // Ensure user is authenticated
+    const user = await ensureLocalUser(db);
 
+    // Get project with owner check
+    const project = await findProjectBySlug(db, user.id, slug);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
@@ -167,12 +162,12 @@ export async function PUT(
 
     // Upload file
     const result = await uploadDocument(db, {
-      projectId: project.id,
+      projectId: project.project.id,
       fileBuffer: buffer,
       originalFilename: file.name,
       mimeType,
       findingId,
-      ownerId: project.ownerId,
+      ownerId: user.id,
     });
 
     if (!result.success) {
@@ -212,19 +207,17 @@ export async function GET(
     const { slug } = await params;
     const db = getDatabase();
 
-    // Get project
-    const [project] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.currentSlug, slug))
-      .limit(1);
+    // Ensure user is authenticated
+    const user = await ensureLocalUser(db);
 
+    // Get project with owner check
+    const project = await findProjectBySlug(db, user.id, slug);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
     // Get documents
-    const docs = await listProjectDocuments(db, project.id);
+    const docs = await listProjectDocuments(db, project.project.id);
 
     return NextResponse.json({ documents: docs });
   } catch (error) {

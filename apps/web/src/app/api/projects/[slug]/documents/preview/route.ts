@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDatabase, projects } from "@diratrack/database";
-import { eq } from "drizzle-orm";
+import { getDatabase, ensureLocalUser, findProjectBySlug } from "@diratrack/database";
 import {
   validateURLStructure,
   ALLOWED_MIME_TYPES,
@@ -31,13 +30,11 @@ export async function POST(
 
     const db = getDatabase();
 
-    // Verify project exists (project-scoped authorization)
-    const [project] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.currentSlug, slug))
-      .limit(1);
+    // Ensure user is authenticated
+    const user = await ensureLocalUser(db);
 
+    // Verify project exists with owner check
+    const project = await findProjectBySlug(db, user.id, slug);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }

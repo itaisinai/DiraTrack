@@ -1,6 +1,5 @@
-import { getDatabase, projects } from "@diratrack/database";
+import { getDatabase, ensureLocalUser, findProjectBySlug } from "@diratrack/database";
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
 import {
   getProjectDocument,
   deletePhysicalFile,
@@ -33,19 +32,17 @@ export async function DELETE(
 
     const db = getDatabase();
 
-    // Get project
-    const [project] = await db
-      .select({ id: projects.id, ownerId: projects.ownerId })
-      .from(projects)
-      .where(eq(projects.currentSlug, slug))
-      .limit(1);
+    // Ensure user is authenticated
+    const user = await ensureLocalUser(db);
 
+    // Get project with owner check
+    const project = await findProjectBySlug(db, user.id, slug);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
     // Verify document exists in project
-    const projectDoc = await getProjectDocument(db, project.id, documentId);
+    const projectDoc = await getProjectDocument(db, project.project.id, documentId);
     if (!projectDoc) {
       return NextResponse.json(
         { error: "Document not found in project" },
@@ -56,9 +53,9 @@ export async function DELETE(
     if (action === "delete-file") {
       // Delete physical file only
       const result = await deletePhysicalFile(db, {
-        projectId: project.id,
+        projectId: project.project.id,
         documentId,
-        ownerId: project.ownerId,
+        ownerId: user.id,
       });
 
       if (!result.success) {
@@ -77,9 +74,9 @@ export async function DELETE(
 
     // Remove from project (default)
     const result = await removeDocumentFromProject(db, {
-      projectId: project.id,
+      projectId: project.project.id,
       documentId,
-      ownerId: project.ownerId,
+      ownerId: user.id,
     });
 
     if (!result.success) {
@@ -137,19 +134,17 @@ export async function GET(
     const { slug, documentId } = await params;
     const db = getDatabase();
 
-    // Get project
-    const [project] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.currentSlug, slug))
-      .limit(1);
+    // Ensure user is authenticated
+    const user = await ensureLocalUser(db);
 
+    // Get project with owner check
+    const project = await findProjectBySlug(db, user.id, slug);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
     // Get document
-    const projectDoc = await getProjectDocument(db, project.id, documentId);
+    const projectDoc = await getProjectDocument(db, project.project.id, documentId);
     if (!projectDoc) {
       return NextResponse.json(
         { error: "Document not found in project" },
